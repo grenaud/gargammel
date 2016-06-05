@@ -9,7 +9,12 @@
 #include <fstream>
 #include <gzstream.h>
 #include <random>
+#include <cstring>
 
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 //#define DEBUG
 
 #include "utils.h"
@@ -21,6 +26,153 @@ typedef struct{
 } subrates;
 
 
+typedef struct{
+    string name;
+    uint64_t startIndexChr;
+    uint64_t endIndexChr;
+    uint64_t length;
+} chrinfo;
+
+
+/* it is the structure created by samtools faidx */
+typedef struct faidx1_t{
+    int32_t line_len, line_blen;
+    int64_t len;
+    uint64_t offset;
+}faidx1_t,*FaidxPtr;
+
+
+uint64_t  randGenomicCoord(const uint64_t & genomeLength){     
+
+     while(true){
+	 uint64_t toReturn = 
+	     (((uint64_t) rand() <<  0) & 0x000000000000FFFFull) | 
+	     (((uint64_t) rand() << 16) & 0x00000000FFFF0000ull) | 
+	     (((uint64_t) rand() << 32) & 0x0000FFFF00000000ull) |
+	     (((uint64_t) rand() << 48) & 0xFFFF000000000000ull);
+	 //cout<<toReturn<<endl;
+	 //should work if genome size is less than 2^64, 
+	 //creates a slight but negligeable bias towards the begininning of the genome
+	 return toReturn%genomeLength;
+     }
+ }
+
+
+/**
+ * wrapper for a mmap, a fileid and some faidx indexes
+ */
+class IndexedGenome{
+private:
+    /* used to get the size of the file */
+    struct stat buf;
+    /* genome fasta file file descriptor */
+    int fd;
+    /* the mmap (memory mapped) pointer */
+    char *mapptr;
+    /** reads an fill a string */
+    bool readline(gzFile in,string& line){
+	if(gzeof(in)) return false;
+	line.clear();
+	int c=-1;
+	while((c=gzgetc(in))!=EOF && c!='\n') 
+	    line+=(char)c;
+	return true;
+    }
+    
+public:
+    /* maps a chromosome to the samtools faidx index */
+    map<string,faidx1_t> name2index;
+
+    /** constructor 
+     * @param fasta: the path to the genomic fasta file indexed with samtools faidx
+     */
+    IndexedGenome(const char* fasta):fd(-1),mapptr(NULL){
+	string faidx(fasta);
+	//cout<<fasta<<endl;
+	string line;
+	faidx+=".fai";
+	/* open *.fai file */
+	//cout<<faidx<<endl;
+	ifstream in(faidx.c_str(),ios::in);
+	if(!in.is_open()){
+	    cerr << "Cannot open faidx: " << faidx << endl;
+	    exit(EXIT_FAILURE);
+	}
+
+	/* read indexes in fai file */
+	while(getline(in,line,'\n')){
+	    if(line.empty()) 
+		continue;
+	    const char* p=line.c_str();
+	    char* tab=(char*)strchr(p,'\t');
+	    if(tab==NULL) 
+		continue;
+	    string chrom(p,tab-p);
+	    ++tab;
+	    faidx1_t index;
+	    if(sscanf(tab,"%ld\t%ld\t%d\t%d",&index.len, &index.offset, &index.line_blen,&index.line_len)!=4){
+		cerr << "Cannot read index in "<< line << endl;
+		exit(EXIT_FAILURE);
+	    }
+	    /* insert in the map(chrom,faidx) */
+	    name2index.insert(make_pair(chrom,index));
+	}
+	/* close index file */
+	in.close();
+	
+	/* get the whole size of the fasta file */
+	if(stat(fasta, &buf)!=0){
+	    perror("Cannot stat");
+	    exit(EXIT_FAILURE);
+	}
+	
+	/* open the fasta file */
+	fd = open(fasta, O_RDONLY);
+	if (fd == -1){
+	    perror("Error opening file for reading");
+	    exit(EXIT_FAILURE);
+	}
+	/* open a memory mapped file associated to this fasta file descriptor */
+	mapptr = (char*)mmap(0, buf.st_size, PROT_READ, MAP_SHARED, fd, 0);
+	if (mapptr == MAP_FAILED){
+	    close(fd);
+	    perror("Error mmapping the file");
+	    exit(EXIT_FAILURE);
+	}
+    } //end Constructor
+
+    /* destructor */
+    ~IndexedGenome(){
+	/* close memory mapped map */
+	if(mapptr!=NULL && munmap(mapptr,buf.st_size) == -1){
+	    perror("Error un-mmapping the file");
+	}
+
+	/* dispose fasta file descriptor */
+	if(fd!=-1) 
+	    close(fd);
+    }
+
+    
+    string fetchSeq(const FaidxPtr faidx,int64_t index, int lengthFragment){
+	//cout<<"fetchSeq"<<endl;
+	int64_t index2=index;
+	string strToPrint="";
+	    
+	for(int j=0;j<lengthFragment;j++){ //for each char
+	    long pos= faidx->offset +
+		index2 / faidx->line_blen * faidx->line_len +
+		index2 % faidx->line_blen
+		;
+	    //cerr<<char(toupper(mapptr[pos]));
+	    strToPrint+=char(toupper(mapptr[pos]));
+	    index2++;
+	}
+	       
+	return strToPrint;   	
+    }
+
+};
 
 bool isResolvedDNAstring(const string & s){
     for(unsigned int i=0;i<s.size();i++){
@@ -59,7 +211,7 @@ int main (int argc, char *argv[]) {
     bool   fileSizeFragB=false;
     int minimumFragSize=   0;
     int maximumFragSize=1000;
-
+    bool noRev=false;
 
     const string usage=string("\nThis program takes a fasta file representing a chromosome and generates\n")+
 	"aDNA fragments according to a certain distribution\n\n"+
@@ -71,6 +223,8 @@ int main (int argc, char *argv[]) {
 	"\t\t"+"--dist\t"+"[file]"+"\t\t\t\t"+"Distance from ends to consider  (default: "+stringify(distFromEnd)+")"+"\n"+
 	"\t\t"+"\t"+""+"\t\t\t\t"+"if this is not specified, the base composition"+"\n"+
 	"\t\t"+"\t"+""+"\t\t\t\t"+"will only reflect the chromosome file used"+"\n"+
+	"\t\t"+"--norev\t"+""+"\t\t\t\t"+"Do not reverse complement (default: rev. comp half of seqs.)"+"\n"+
+
 	"\n"+
 	"\tFragment size: \n"+
 	"\t\t"+"-m\t"+"[length]" +"\t\t\t"+"Minimum fragments length  (default: "+stringify(minimumFragSize)+")"+"\n"+
@@ -125,6 +279,11 @@ int main (int argc, char *argv[]) {
             continue;
         }
 
+	if(string(argv[i]) == "--norev" ){
+	    noRev=true;
+            continue;
+        }
+
         if(string(argv[i]) == "--scale" ){
             scale=destringify<double>(argv[i+1]);
             i++;
@@ -170,7 +329,10 @@ int main (int argc, char *argv[]) {
     }
 
     //cerr<<"done"<<endl;
-
+    // if(compFileSpecified){
+    // 	distFromEnd=0;
+    // }
+    //cerr<<distFromEnd<<endl;
 
     if(specifiedLoc && !specifiedScale){
         cerr<<"Error: cannot specify --loc without --scale"<<endl;
@@ -198,14 +360,15 @@ int main (int argc, char *argv[]) {
 
     }
 
-    // for(int i=0;i<10000;i++){
-    // 	double number = distribution(generator);
-    // 	cout<<number<<endl;
-    // }
-    // return 1;
+
 
     if(specifiedLength && fileSizeFragB){ 
 	cerr<<"Error: cannot specify -l and -s"<<endl;
+	return 1;
+    }
+
+    if(!specifiedScale && !specifiedLength  && !fileSizeFragB){
+	cerr<<"Error: must specify -l, -s or either the log-normal parameters for the fragment size."<<endl;
 	return 1;
     }
 
@@ -234,7 +397,10 @@ int main (int argc, char *argv[]) {
     // }
     // return 1;
 
-	
+    timeval time;
+    gettimeofday(&time, NULL);
+    srand(  long((time.tv_sec * 1000) + (time.tv_usec / 1000)) );
+
 
 
 
@@ -387,23 +553,48 @@ int main (int argc, char *argv[]) {
 
     //return 1;
     //TODO mmap
-    igzstream myFile;
-    string defline;
-    myFile.open(fastaFile.c_str(), ios::in);
-    string chrall="";
-    getline (myFile,line);//header
-    defline = line;
-    if (myFile.good()){
-	while ( getline (myFile,line)){
-	    //cout<<line<<endl;
-	    //chrall+=line;
-	    chrall =line;
-	}
-	myFile.close();
-    }else{
-	cerr << "Unable to open file "<<fastaFile<<endl;
-	return 1;
+    IndexedGenome* genome=new IndexedGenome(fastaFile.c_str());
+    cerr<<"Mapped "<<fastaFile<<" into memory"<<endl;
+
+    uint64_t genomeLength=0;
+    vector<chrinfo> chrFound;
+
+    typedef map<string,faidx1_t>::iterator it_type;
+    for(it_type iterator = genome->name2index.begin(); iterator != genome->name2index.end(); iterator++) {
+	//cout<<iterator->first<<"\t"<<iterator->second.len<<"\t"<<genomeLength<<endl;
+	
+	chrinfo toadd;
+
+	toadd.name          = iterator->first;
+	toadd.startIndexChr = genomeLength+1;
+	toadd.length        = iterator->second.len;
+	toadd.endIndexChr   = genomeLength+iterator->second.len;
+	genomeLength       += iterator->second.len;
+
+	chrFound.push_back(toadd);
     }
+
+    
+
+
+    // //return 1;
+    // igzstream myFile;
+    // string defline;
+    // myFile.open(fastaFile.c_str(), ios::in);
+    // string chrall="";
+    // getline (myFile,line);//header
+    // defline = line;
+    // if (myFile.good()){
+    // 	while ( getline (myFile,line)){
+    // 	    //cout<<line<<endl;
+    // 	    //chrall+=line;
+    // 	    chrall =line;
+    // 	}
+    // 	myFile.close();
+    // }else{
+    // 	cerr << "Unable to open file "<<fastaFile<<endl;
+    // 	return 1;
+    // }
 
 
     unsigned int   f       = 0;
@@ -417,10 +608,47 @@ int main (int argc, char *argv[]) {
 	if(specifiedScale ){ length=int(distribution(generator));                              	}
 	
 
+	//TODO generate chr and coord
+	uint64_t idx;//         = randomInt(distFromEnd,int(chrall.size())-length-distFromEnd);
+	uint64_t coord;
+	bool found=false;
+	//string temp     = chrall.substr(idx-distFromEnd,length+2*distFromEnd);
+	string temp="";
+	string deflineToPrint;// = defline+":";
+	while(!found){
+	    coord =randGenomicCoord(genomeLength);
 
-	int idx         = randomInt(distFromEnd,int(chrall.size())-length-distFromEnd);
-	string temp     = chrall.substr(idx-distFromEnd,length+2*distFromEnd);
-	bool plusStrand = randomBool();
+	    for(unsigned int i=0;i<chrFound.size();i++){	    
+		// cout<<"------"<<i<<"------"<<endl;
+		// cout<<chrFound[i].name<<endl;
+		// cout<<chrFound[i].startIndexChr<<endl;
+		// cout<<chrFound[i].endIndexChr<<endl;
+		
+		if( (chrFound[i].startIndexChr+distFromEnd) <= coord && coord <= (chrFound[i].endIndexChr-length-distFromEnd+1)){
+		    found=true;
+		    idx = coord-chrFound[i].startIndexChr;
+		    faidx1_t faidxForName=genome->name2index[ chrFound[i].name ];
+		    temp=genome->fetchSeq(&faidxForName,coord-chrFound[i].startIndexChr-distFromEnd, length+2*distFromEnd);
+		    //cout<<">coord "<<coord<<"\tname\t"<<chrFound[i].name<<"\tid=\t"<<idx<<"\tidx+l\t"<<idx+length<<endl;
+		    deflineToPrint = ">"+chrFound[i].name+":";
+		    //cout<<temp<<endl;
+		    // toReturn.setChrName(       chrFound[i].name);
+		    // toReturn.setStartCoord( coord-chrFound[i].startIndexChr);
+		    // toReturn.setEndCoord(   coord-chrFound[i].startIndexChr+bpToExtract);
+		    break;
+		}		
+	    }
+	    if(found) break;
+	    //cout<<"Not found coord="<<coord<<endl;
+	}
+	//return 1;
+
+	bool plusStrand;
+	if(noRev){
+	    plusStrand = true;
+	}else{
+	    plusStrand = randomBool();
+	}
 	string preFrag  = "";
 	string posFrag  = "";
 	string frag     = "";
@@ -430,8 +658,8 @@ int main (int argc, char *argv[]) {
 	// cout<<length<<endl;
 	// cout<<distFromEnd<<endl;
 	//cerr<<"t:"<<temp<<endl;
+	
 
-	string deflineToPrint = defline+":";
 	if(!plusStrand){
 	    //cout<<"-"<<endl;	    
 
@@ -459,7 +687,7 @@ int main (int argc, char *argv[]) {
 
 
 	if(!compFileSpecified){ //no composition file, just produce the sequences	    
-	    cout<<frag<<endl;
+	    cout<<deflineToPrint<<"\n"<<frag<<endl;
 	    f++;
 	}else{
 	    double probAcc = 1.0;
