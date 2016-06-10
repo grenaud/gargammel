@@ -25,6 +25,11 @@
 
 using namespace std;
 
+const uint32_t flagSingleReads =  4; // 00000100
+const uint32_t flagFirstPair   = 77; // 01001101
+const uint32_t flagSecondPair  =141; // 10001101
+
+
 typedef struct { 
     double s[12];
  } substitutionRates;
@@ -74,7 +79,7 @@ int main (int argc, char *argv[]) {
 
 			      " I/O Options:\n"+
 			      "\t\t"+"-b\t"+"[BAM out]"   +"\t\t\t"+"Read BAM and write output as a BAM (default: fasta)"+"\n"+
-			      "\t\t"+"-u\t"               +"\t\t\t\t"+"Produce uncompressed bam (good for unix pipe)"+"\n"+
+			      "\t\t"+"-u\t"               +"\t\t\t\t"+"Produce uncompressed BAM (good for unix pipe)"+"\n"+
 
 			      "\t\t"+"-o\t"+"[fasta out]" +"\t\t\t"+"Write fasta output as a zipped fasta"+"\n"+
 			      "\t\t"+"-name"              +"\t\t\t\t\t"+"Put a tag in the read name with deam bases (Default "+booleanAsString(putDeamInName)+")"+"\n"+
@@ -186,7 +191,6 @@ int main (int argc, char *argv[]) {
             verbose=true;
             continue;
         }
-
 
         if(string(argv[i]) == "-o" ){
             outFastagz  = string(argv[i+1]);
@@ -396,17 +400,14 @@ int main (int argc, char *argv[]) {
 	if(outBAMb){
 	    if(!reader.GetNextAlignment(al))
 		break;
-
 	    def = al.Name;
 	    seq = al.QueryBases;
 	}else{
-
 	    if(!fp->hasData())
 		break;
 	    fo  = fp->getData();
 	    def = *(fo->getID());
 	    seq = *(fo->getSeq());
-
 	}
 	transform(seq.begin(), seq.end(),seq.begin(), ::toupper);
 
@@ -430,8 +431,18 @@ int main (int argc, char *argv[]) {
 	    bool placedNick = false;
 	    int indexNick   = -1;
 	    if( (overhang5p+overhang3p)>=int(seq.size())){//all single strand
-		cerr<<"all single strand"<<endl;
-		//todo
+
+		//just apply sBrgs over the entire fragment
+		for(int i=0;i<int(seq.size());i++){
+		    if(seq[i] == 'C'){
+			if( randomProb() < sBrgs ){
+			    deamPos.push_back(i+1);
+			    seq[i] = 'T';
+			    deaminated=true;
+			}
+		    }
+		}
+
 	    }else{
 	
 		//Placing a nick (maybe)
@@ -637,13 +648,13 @@ int main (int argc, char *argv[]) {
 	    writer.SaveAlignment(al);
 
 	}else{
+
 	    if(outFastagzb){
 		if(putDeamInName && deaminated){
 		    outFastagzfp<<*(fo->getID())<<"_DEAM:"<<vectorToString(deamPos)<<endl<<seq<<endl;
 		}else{
 		    outFastagzfp<<*(fo->getID())<<endl<<seq<<endl;
 		}
-
 	    }else{
 		if(putDeamInName && deaminated){
 		    cout<<*(fo->getID())<<"_DEAM:"<<vectorToString(deamPos)<<endl<<seq<<endl;

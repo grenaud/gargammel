@@ -4,10 +4,16 @@ BAMTOOLS= $(realpath ../bamtools/)
 LIBGAB= $(realpath ../libgab/)
 
 CXXFLAGS =  -std=c++0x -Wall -lm -O3 -lz -I${LIBGAB} -I${LIBGAB}/gzstream/ -I${BAMTOOLS}/include/  -c
-LDFLAGS  = ${LIBGAB}/FastQObj.o  ${LIBGAB}/FastQParser.o ${BAMTOOLS}/lib/libbamtools.a ${LIBGAB}/PutProgramInHeader.o ${LIBGAB}/utils.o ${LIBGAB}/gzstream/libgzstream.a -lm -lz
+LDFLAGS  = ${LIBGAB}/FastQObj.o  ${LIBGAB}/FastQParser.o ${LIBGAB}/PutProgramInHeader.o ${BAMTOOLS}/lib/libbamtools.a  ${LIBGAB}/utils.o ${LIBGAB}/gzstream/libgzstream.a -lm -lz
 
 
-all: fragSim deamSim
+all: fragSim deamSim adptSim
+
+adptSim.o:	adptSim.cpp
+	${CXX} ${CXXFLAGS} adptSim.cpp
+
+adptSim:	adptSim.o 
+	${CXX} -o $@ $^ $(LDLIBS) $(LDFLAGS)
 
 fragSim.o:	fragSim.cpp
 	${CXX} ${CXXFLAGS} fragSim.cpp
@@ -22,5 +28,5 @@ deamSim:	deamSim.o
 	${CXX} -o $@ $^ $(LDLIBS) $(LDFLAGS)
 
 clean :
-	rm -f fragSim.o fragSim deamSim.o deamSim
+	rm -f fragSim.o fragSim deamSim.o deamSim adptSim.o adptSim
 

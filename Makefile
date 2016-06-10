@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 
 
-all: 	src/fragSim
+all: 	src/fragSim art_src_MountRainier_Linux/art_illumina_src/art_illumina.o
 
 src/fragSim: libgab/utils.o bamtools/lib/libbamtools.so
 	make -C src
@@ -20,6 +20,12 @@ bamtools/src/api/BamAlignment.h:
 
 bamtools/lib/libbamtools.so: bamtools/src/api/BamAlignment.h
 	cd bamtools/ && mkdir -p build/  && cd build/ && cmake .. && make && cd ../..
+
+art_src_MountRainier_Linux/art_illumina_src/art_illumina.o: #todo: add wget after rm 
+	rm -rf art_src_MountRainier_Linux/ artsrcmountrainier20160605linuxtgz.tgz
+	wget http://www.niehs.nih.gov/research/resources/assets/docs/artsrcmountrainier20160605linuxtgz.tgz
+	tar xvfz artsrcmountrainier20160605linuxtgz.tgz
+	cd art_src_MountRainier_Linux/ && ./configure && make && cd ..
 
 clean:
 	make -C libgab clean
