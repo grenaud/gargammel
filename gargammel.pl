@@ -16,8 +16,6 @@ my $mock =0;
 
 
 
-
-
 sub copycmd{
   my ($source,$destination) = @_;
   print STDERR "copying  ". $source." to ".$destination."\n";
@@ -39,6 +37,21 @@ sub runcmd{
     }else{
     }
   }
+
+}
+
+sub runcmdforce{
+  my ($cmdtorun) = @_;
+
+  print STDERR "running cmd ". $cmdtorun."\n";
+
+  my @argstorun = ( "bash", "-c", $cmdtorun );
+
+  if (system(@argstorun) != 0) {
+    die "system  cmd $cmdtorun failed: $?"
+  } else {
+  }
+
 
 }
 
@@ -369,22 +382,23 @@ if( (defined $matfile) ){
 }
 
 if( (defined $briggs) ){
-  my @arr=split($briggs,",");
+  my @arr=split(",",$briggs);
+
   if($#arr != 3){
-    die "The option for -briggs must be 4 comma-delimited numbers, found ".($#arr+1)." parameters\n";
+    die "The option for -briggs must be 4 comma-delimited numbers, found ".($#arr+1)." parameters in ".$briggs."\n";
   }
 
   if(!looks_like_number($arr[0])){
-    die "The option for -briggs must be 4 comma-delimited numbers, found ".($#arr+1)." parameters\n";
+    die "The option for -briggs must be 4 comma-delimited numbers, parameter 1 :".$arr[0]." must be a number\n";
   }
   if(!looks_like_number($arr[1])){
-    die "The option for -briggs must be 4 comma-delimited numbers, found ".($#arr+1)." parameters\n";
+    die "The option for -briggs must be 4 comma-delimited numbers, parameter 2 :".$arr[1]." must be a number\n";
   }
   if(!looks_like_number($arr[2])){
-    die "The option for -briggs must be 4 comma-delimited numbers, found ".($#arr+1)." parameters\n";
+    die "The option for -briggs must be 4 comma-delimited numbers, parameter 3 :".$arr[2]." must be a number\n";
   }
   if(!looks_like_number($arr[3])){
-    die "The option for -briggs must be 4 comma-delimited numbers, found ".($#arr+1)." parameters\n";
+    die "The option for -briggs must be 4 comma-delimited numbers, parameter 4 :".$arr[3]." must be a number\n";
   }
 }
 
@@ -492,7 +506,7 @@ foreach my $fafile (@arrayofFilesbact){
   print STDERR "Found bacterial contaminant file ".$fafile."\n";
   if(!(-f $fafile.".fai")){
     my $cmd = "samtools faidx $fafile";
-    runcmd($cmd);
+    runcmdforce($cmd);
   }else{
     print STDERR "Found bacterial contaminant indx ".$fafile.".fai\n";
   }
@@ -528,7 +542,7 @@ foreach my $fafile (@arrayofFilescont){
   print STDERR "Found present-day human contamination file  ".$fafile."\n";
   if(!(-f $fafile.".fai")){
     my $cmd = "samtools faidx $fafile";
-    runcmd($cmd);
+    runcmdforce($cmd);
   }else{
     print STDERR "Found present-day human contamination index ".$fafile.".fai\n";
   }
@@ -570,7 +584,7 @@ if ($compE>0) {			#if we have endogenous material
     print STDERR "Found endogenous file  ".$fafile."\n";
     if (!(-f $fafile.".fai")) {
       my $cmd = "samtools faidx $fafile";
-      runcmd($cmd);
+      runcmdforce($cmd);
     } else {
       print STDERR "Found endogenous index ".$fafile.".fai\n";
     }
@@ -663,6 +677,10 @@ my $numberOfFragmentsB;
 my $numberOfFragmentsE;
 
 if(defined $coverage){
+  my $sumEeffective=$sumE;
+  if($diploidMode){
+    my $sumEeffective=$sumE/2;#if diploid, the sum is overestimated by 2.
+  }
   $numberOfFragmentsE=int($coverage*($sumE/$averageSize));
   $numberOfFragments  = int($numberOfFragmentsE/$compE);
   $numberOfFragmentsC = int($numberOfFragments * $compC/($compE+$compC+$compB));

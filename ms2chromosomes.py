@@ -14,6 +14,15 @@ from Bio import SeqIO
 from Bio.Seq import Seq
 
 
+def rmdircont(folder):
+    for the_file in os.listdir(folder):
+        file_path = os.path.join(folder, the_file)
+        try:
+            if os.path.isfile(file_path):
+                os.unlink(file_path)    
+        except Exception as e:
+            print(e)
+
 def reversecomplement(sequence):
     complement = {"A":"T", "T":"A", "C":"G", "G":"C", "N":"N"}
     reverse_complement_sequence = ""
@@ -137,15 +146,19 @@ if not os.path.exists(destfolder):
 
 if not os.path.exists(destfolder+"/cont/"):
     os.mkdir(destfolder+"/cont/");
+else:
+    rmdircont(destfolder+"/cont/");
 
 if not os.path.exists(destfolder+"/bact/"):
     os.mkdir(destfolder+"/bact/");
+else:
+    rmdircont(destfolder+"/bact/");
 
 if not os.path.exists(destfolder+"/endo/"):
     os.mkdir(destfolder+"/endo/");
+else:
+    rmdircont(destfolder+"/endo/");
 
-if not os.path.exists(destfolder+"/endo/"):
-    os.mkdir(destfolder+"/endo/");
 
 if os.path.exists(""+destfolder+"/ref.fa"):
     os.remove(""+destfolder+"/ref.fa");
@@ -181,7 +194,7 @@ while i < (numsim+1):
         commname3 = "cat "+infile_name+"_tmp | grep '('   > "+infile_name+"_tree";
 	handle_job(commname3);
 
-        commname4 = ""+seqgencmd+"    -mHKY -l "+str(lengthchr)+" -s "+str(branchlscale)+"   "+infile_name+"_tree |tail -n+2  |awk '{print \">\"$1\"\\n\"$2}'  > "+infile_name+".fa";
+        commname4 = ""+seqgencmd+"  -z `date +%H%M%S%N`   -mHKY -l "+str(lengthchr)+" -s "+str(branchlscale)+"   "+infile_name+"_tree |tail -n+2  |awk '{print \">\"$1\"\\n\"$2}'  > "+infile_name+".fa";
 	handle_job(commname4);
 
 	#try:
