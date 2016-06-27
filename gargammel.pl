@@ -126,6 +126,7 @@ sub listdirFa {
       #print "dir ".$dirtolist."".$dir."\n";
       if($dir =~ /.fa$/       ||
 	 $dir =~ /.fa.gz$/    ||
+	 $dir =~ /.fna$/      ||
 	 $dir =~ /.fasta$/    ||
 	 $dir =~ /.fasta.gz$/ ){
 	push(@arrayToReturn,$dirtolist."".$dir);
@@ -238,9 +239,9 @@ sub usage
   "\n".
   " Adapter and sequencing\n".
   " ===================\n".
-  "	-f	[seq]			\tAdapter that is observed after the forward read (Default: ".substr($adapterF,0,10)."...)
-	-s	[seq]			\tAdapter that is observed after the reverse read (Default: ".substr($adapterR,0,10)."...)
-	-l	[length]		\tDesired read length  (Default: ".$readlength.")
+  "	-fa	[seq]			\tAdapter that is observed after the forward read (Default: ".substr($adapterF,0,10)."...)
+	-sa	[seq]			\tAdapter that is observed after the reverse read (Default: ".substr($adapterR,0,10)."...)
+	-rl	[length]		\tDesired read length  (Default: ".$readlength.")
 	-se                             \tuse single-end sequencing (Default: paired-end)
 	-ss     [system]                \tIllumina platfrom to use, the parentheses indicate the max. read length
 	                                \tuse the shorthand in the left column:
@@ -282,16 +283,32 @@ my $briggs;
 my $se=0;
 my $ss;
 
+my $fa;
+my $sa;
+my $rl;
+
 usage() if ( @ARGV < 1 or
-	     ! GetOptions('help|?' => \$help, 'mock' => \$mock, 'se' => \$se, 'ss' => \$ss, 'misince=s' => \$misince,'misincb=s' => \$misincb,'misincc=s' => \$misincc, 'comp=s' => \$comp, 'matfile=s' => \$matfile, 'briggs=s' => \$briggs, 'o=s' => \$outputprefix, 'n=i' => \$numberOfFragments,'l=i' => \$fraglength,'s=s' => \$filefragsize, 'loc=s' => \$loc, 'scale=s' => \$scale, 'c=f' => \$coverage, 'minsize=i' => \$minsize,'maxsize=i' => \$maxsize)
+	     ! GetOptions('help|?' => \$help, 'mock' => \$mock, 'se' => \$se, 'ss' => \$ss, 'misince=s' => \$misince,'misincb=s' => \$misincb,'misincc=s' => \$misincc, 'comp=s' => \$comp, 'matfile=s' => \$matfile, 'briggs=s' => \$briggs, 'o=s' => \$outputprefix, 'n=i' => \$numberOfFragments,'l=i' => \$fraglength,'s=s' => \$filefragsize, 'loc=s' => \$loc, 'fa=s' => \$fa, 'sa=s' => \$sa, 'rl=s' => \$rl, 'scale=s' => \$scale, 'c=f' => \$coverage, 'minsize=i' => \$minsize,'maxsize=i' => \$maxsize)
           or defined $help );
 
 if( !(defined $ss) ){
   $ss = "HS25";
 }
 
+if( defined $fa ){
+  $adapterF=$fa;
+}
 
-if ($ss eq "GA2") {		#- GenomeAnalyzer II (50bp, 75bp) 
+if( defined $sa ){
+  $adapterR=$sa;
+}
+
+if( defined $rl ){
+  $readlength=$rl;
+}
+
+
+if ($ss eq "GA2") {		#- GenomeAnalyzer II (50bp, 75bp)
   if ($se) {
     if ($readlength>50) {
       die "Read length ".$readlength." is greater than the one allowed by the platform\n";
@@ -376,9 +393,15 @@ if( (defined $misincb) ){
 }
 
 if( (defined $matfile) ){
-  if( !(-e $matfile)){
-    die "Matrix file does not exists\n";
+
+  if( !(-e $matfile."5.dat")){
+    die "Matrix file ".$matfile."5.dat does not exists\n";
   }
+
+  if( !(-e $matfile."3.dat")){
+    die "Matrix file ".$matfile."3.dat does not exists\n";
+  }
+
 }
 
 if( (defined $briggs) ){
@@ -427,7 +450,7 @@ if($#arraycomp != 2){
 
 if( (defined $coverage) &&
     $numberOfFragments!=1000){
-  die "Must use the -f or -n but not both";
+  die "Must use the -c or -n but not both";
 }
 
 
@@ -458,7 +481,6 @@ if(substr($dirWithChr,length($dirWithChr)-1,1) ne "/"){
 if( !(defined $outputprefix) ){
   $outputprefix = $dirWithChr."simadna";
 }else{
-  
 }
 
 
@@ -496,10 +518,52 @@ my @arrayofFilesbactL;
 my @arrayofFilesbactLfrac;
 my @arrayofFilesbactToExtract;
 
+my @arrayofFilesbactLFromList;
+my @arrayofFilesbactLFromListW;
+my @arrayofFilesbactLFromListB;
+my @arrayofFilesbactLFromListP;
+
 if($compB>0){
+
   if($#arrayofFilesbact==-1){
     die "If you want bacterial contamination, please have at least one file in the bact/ directory\n";
   }
+
+  if( !( -e $arrayofdirs[0]."/list" ) ){
+    die "List file ".$arrayofdirs[0]."/list does not exist, this file must contain the list of files and their weight ex:
+file1.fa\t0.3
+file2.fa\t0.2
+file3.fa\t0.15
+file4.fa\t0.12
+file5.fa\t0.1
+file6.fa\t0.7
+file7.fa\t0.5
+\n";
+  }else{
+    my $sumWeight=0;
+    open(FILE,$arrayofdirs[0]."/list");
+    while(my $line = <FILE>){
+      if($line =~ /^(\S+)\s+(\S+)$/){
+
+	if(!looks_like_number($2)){
+	  die "Cannot parse line from bacterial list: ".$arrayofdirs[0]."/list must be:\nfile\tweight(between 0 and 1)\nfound line:".$line;
+	}
+	push(@arrayofFilesbactLFromList, $1);
+	push(@arrayofFilesbactLFromListB, 0);
+	push(@arrayofFilesbactLFromListW,$2);
+	$sumWeight+=$2;
+      }else{
+	die "Cannot parse line from bacterial list: ".$arrayofdirs[0]."/list line:".$line;
+      }
+    }
+    close(FILE);
+
+    if($sumWeight<0.99 || $sumWeight>1.01 ){
+      die "Problem from bacterial list: ".$arrayofdirs[0]."/list sum is not 1, found: ".$sumWeight;
+    }
+
+  }
+
 }
 
 foreach my $fafile (@arrayofFilesbact){
@@ -522,10 +586,42 @@ foreach my $fafile (@arrayofFilesbact){
   }
   close(FILE);
 
+  for(my $i=0;$i<=$#arrayofFilesbactLFromList;$i++){
+    print $arrayofdirs[0].$arrayofFilesbactLFromList[$i]."\n";
+    print $fafile."\n";
+    if($arrayofdirs[0].$arrayofFilesbactLFromList[$i] eq $fafile){
+      if($arrayofFilesbactLFromListB[$i] == 1){
+	die "Fasta  ".$fafile." was found twice in the list";
+      }
+      $arrayofFilesbactLFromListB[$i] = 1;
+    }
+  }
+
+
   push(@arrayofFilesbactL, $sumForFile);
   push(@arrayofFilesbactSL,$sumB);
   push(@arrayofFilesbactToExtract,0);
 }
+
+
+for(my $i=0;$i<=$#arrayofFilesbactLFromList;$i++){
+  if($arrayofFilesbactLFromListB[$i] == 0){
+    die "Fasta  ".$arrayofFilesbactLFromList[$i]." was not found in the directory but it was found in the list\n";
+  }
+}
+
+
+my $sumOfListW=0;
+push(@arrayofFilesbactLFromListP,$sumOfListW);
+
+for(my $i=0;$i<=$#arrayofFilesbactLFromListW;$i++){
+  #print $i."\t".$arrayofFilesbactLFromListW[$i]."\n";
+  $sumOfListW += $arrayofFilesbactLFromListW[$i];
+  push(@arrayofFilesbactLFromListP,$sumOfListW);
+}
+
+
+
 
 if($compC>0){
   if($#arrayofFilescont==-1){
@@ -713,7 +809,71 @@ if($diploidMode){
 
 
 
+
+
+
+
+if($numberOfFragmentsB>0){
+  print STDERR "\nSelecting bacterial genomes according to composition vector:\n";
+  my $maxsizeFilename=0;
+
+  for(my $i=0;$i<=$#arrayofFilesbactLFromList;$i++){
+    if(length($arrayofFilesbactLFromList[$i])>$maxsizeFilename){
+      $maxsizeFilename = length($arrayofFilesbactLFromList[$i]);
+    }
+  }
+  for(my $i=0;$i<=$#arrayofFilesbactLFromList;$i++){
+    print STDERR "P[".(' 'x($maxsizeFilename-length($arrayofFilesbactLFromList[$i]))).$arrayofFilesbactLFromList[$i]."] = ".$arrayofFilesbactLFromListW[$i]."\n";
+  }
+
+
+}
+
+if (0) {
+  for (my $i=0;$i<$numberOfFragmentsB;$i++) {
+    my $randB=int(rand($sumB));
+
+    for (my $j=0;$j<=$#arrayofFilesbactSL;$j++) {
+      if ($randB<=$arrayofFilesbactSL[$j]) {
+	$arrayofFilesbactToExtract[$j]++;
+	last;
+      }
+    }
+  }
+} else {
+  my $digitfb= log($numberOfFragmentsB)/log(10) +1;
+  for (my $i=0;$i<$numberOfFragmentsB;$i++) {
+    if($i!=0&&
+       ($i%100000)==0){
+      print  STDERR "selected ".sprintf("%".$digitfb."s",$i)." bacterial fragments\n";
+    }
+
+    #print  $i."\n";
+    my $randP=rand();
+    my $indexFound=-1;
+    #print  $randP."\n";
+    for(my $i=1;$i<=$#arrayofFilesbactLFromListP;$i++){
+      #print "prob ".$randP." ".$arrayofFilesbactLFromListP[$i-1]." ".$arrayofFilesbactLFromListP[$i];
+      if( ($arrayofFilesbactLFromListP[$i-1]<=$randP) &&
+	  ($arrayofFilesbactLFromListP[$i]  >=$randP) ){
+	$indexFound=$i-1;
+	#die;
+	last;
+      }
+    }
+
+    if($indexFound != -1){
+      $arrayofFilesbactToExtract[$indexFound]++;
+    }else{
+      $i--;#restart iteration
+      #die;
+    }
+  }
+}
+
+
 print STDERR "We will generate: \n\n";
+print STDERR "".$numberOfFragments."\ttotal fragments\n";
 print STDERR "--------------------------------------------\n";
 print STDERR "".$numberOfFragmentsE."\t(".sprintf("% .2f",100*$numberOfFragmentsE/$numberOfFragments)."%) "."\tendogenous fragments\n";
 
@@ -743,25 +903,10 @@ for(my $i=0;$i<=$#arrayofFilescont;$i++){
   print STDERR "".$arrayofFilescontToExtract[$i]."\t(".sprintf("% .2f",100*$arrayofFilescontToExtract[$i]/$numberOfFragments)."%) "."\tcontaminant fragments from file: ".$arrayofFilescont[$i]."\n";
 }
 
-
-
-
 print STDERR "--------------------------------------------\n";
-print STDERR   "".$numberOfFragmentsB."\t(".sprintf("% .2f",100*$numberOfFragmentsB/$numberOfFragments)."%) "."\tbacterial fragments\n".
-  "--------------------------------------------\n".
-  "".$numberOfFragments."\ttotal fragments\n";
+print STDERR   "".$numberOfFragmentsB."\t(".sprintf("% .2f",100*$numberOfFragmentsB/$numberOfFragments)."%) "."\tbacterial fragments\n";
+  "--------------------------------------------\n";
 
-
-for(my $i=0;$i<$numberOfFragmentsB;$i++){
-  my $randB=int(rand($sumB));
-
-  for(my $j=0;$j<=$#arrayofFilesbactSL;$j++){
-    if($randB<=$arrayofFilesbactSL[$j]){
-      $arrayofFilesbactToExtract[$j]++;
-      last;
-    }
-  }
-}
 
 for(my $i=0;$i<=$#arrayofFilesbact;$i++){
   print STDERR "".$arrayofFilesbactToExtract[$i]."\t(".sprintf("% .2f",100*$arrayofFilesbactToExtract[$i]/$numberOfFragments)."%) "."\tbactaminant fragments from file: ".$arrayofFilesbact[$i]."\n";
@@ -860,7 +1005,15 @@ if ($#arrayofFilescont != -1 && $numberOfFragmentsC>0) {
 	$cmd1 .= " -l ".$fraglength." ";
       }
     }
-    $cmd1 .= "  ".$arrayofFilescont[$i]." |/bin/gzip > ".$outputprefix.".c.fa.gz";
+
+    $cmd1 .= "  ".$arrayofFilescont[$i]." |/bin/gzip ";
+    if($i==0){
+      $cmd1 .= " >  ";
+    }else{
+      $cmd1 .= " >> ";
+    }
+
+    $cmd1.="".$outputprefix.".c.fa.gz";
     runcmd($cmd1);
   }
 } else {
@@ -887,7 +1040,13 @@ if ($#arrayofFilesbact != -1 && $numberOfFragmentsB>0) {
 	$cmd1 .= " -l ".$fraglength." ";
       }
     }
-    $cmd1 .= "  ".$arrayofFilesbact[$i]." |/bin/gzip > ".$outputprefix.".b.fa.gz";
+    $cmd1 .= "  ".$arrayofFilesbact[$i]." |/bin/gzip ";
+    if($i==0){
+      $cmd1 .= " >  ";
+    }else{
+      $cmd1 .= " >> ";
+    }
+    $cmd1 .= " ".$outputprefix.".b.fa.gz";
     runcmd($cmd1);
   }
 } else {

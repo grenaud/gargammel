@@ -208,7 +208,9 @@ int main (int argc, char *argv[]) {
         return 1;
     }
 
-    if(!useBriggs && !matrixSpecified ){
+    if(!useBriggs          && 
+       !matrixSpecified    && 
+       !matrixFileSpecified){
     	cerr << "Please specify the matrix to use or use the Briggs parameter model"<<endl;
     	return 1;
     }

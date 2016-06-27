@@ -8,7 +8,7 @@ various levels of bacterial contamination.
 
 
 
-Questions :
+Questions/feature requests :
 -------------------------------------------------------------------------------------
 	contact: Gabriel Renaud   
 	email:	 gabriel [dot] reno [ at sign ] gmail.com
@@ -77,7 +77,7 @@ Next we will create 1000 simulations of 2 lineages that are allowed to coalesce 
   cd data/
   python ../ms2chromosomes.py  -s 0.2 -f . -n 1000 
   rm -rfv simul_* seedms #cleanup
-
+  
 This will create the following files:
   cont/cont.0.fa
   cont/cont.1.fa
@@ -90,11 +90,34 @@ The segsites files corresponds to heterozygous sites between both endogenous gen
 
 
 Then we will create the aDNA fragments:
+  cd ..
+  ./gargammel.pl -c 3  --comp 0,0.08,0.92 -s src/sizedist.size.gz  -matfile src/matrices/single-3.  -o data/simulation data/
 
-  TODO
+This will simulated a dataset with 8% human contamination. The deamination rate that will be used will follow a single-strand deamination using the empirical rates measured from the Loschbour individual from:
+
+   Lazaridis, Iosif, et al. "Ancient human genomes suggest three ancestral populations for present-day Europeans." Nature 513.7518 (2014): 409-413.
 
 
-Example of bacterial databases:
+The size distribution of the aDNA fragments is from a subset of:
+
+   Fu, Qiaomei, et al. "Genome sequence of a 45,000-year-old modern human from western Siberia." Nature 514.7523 (2014): 445-449. 
+
+The read size will be 2x75bp and the Illumina platform being simulated is the HiSeq 2500. The final reads will be found:
+
+   data/out_s1.fq.gz
+   data/out_s2.fq.gz
+
+
+Bacterial databases:
+-------------------------------------------------------------------------------------
+
+
+If you simply want to use a uniform probability and do not wish to use a weighted list, if for instance your data is in input/bact/ in fasta files ending with .fa, simply type:
+
+total=`ls -1  input/bact/*fa |wc -l ` && ls -1 input/bact/*fa  | awk -v total="$total" ' {print $1"\t"(1/total)}' > input/bact/list
+
+
+Example bacterial databases:
 -------------------------------------------------------------------------------------
 
 TODO
