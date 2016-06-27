@@ -679,9 +679,9 @@ my $numberOfFragmentsE;
 if(defined $coverage){
   my $sumEeffective=$sumE;
   if($diploidMode){
-    my $sumEeffective=$sumE/2;#if diploid, the sum is overestimated by 2.
+    $sumEeffective=$sumE/2;#if diploid, the sum is overestimated by 2.
   }
-  $numberOfFragmentsE=int($coverage*($sumE/$averageSize));
+  $numberOfFragmentsE = int($coverage*($sumEeffective/$averageSize));
   $numberOfFragments  = int($numberOfFragmentsE/$compE);
   $numberOfFragmentsC = int($numberOfFragments * $compC/($compE+$compC+$compB));
   $numberOfFragmentsB = int($numberOfFragments * $compB/($compE+$compC+$compB));

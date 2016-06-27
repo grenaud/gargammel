@@ -85,13 +85,15 @@ def handle_job(cjob):
 
 
 parser = OptionParser("$prog [options]")
-parser.add_option("-t", "--theta",      dest="theta",        help="Theta",                          default=20,      type="float");
-parser.add_option("-s", "--timesplit",  dest="timesplit",    help="Split time in 2N_0 generations", default=0.10,    type="float");
-parser.add_option("-f", "--destfolder", dest="destfolder",   help="Output folder",                  default=None,    type="string");
-parser.add_option("-n", "--numsim",     dest="numsim",       help="Number of simulations",          default=100,     type="int");
-parser.add_option(""  , "--branchl",    dest="branchlscale", help="Seqgen branch scale",            default=0.00045, type="float");
-parser.add_option(""  , "--chrlen",     dest="lengthchr",    help="Chromosome length",              default=10000,   type="int");
-parser.add_option("-u", "--numtotalhum", dest="numtotalhum",help="Number of human contaminants, default and minimum is 2 (1 for cont. 1 for reference)", default=3, type="int")
+#parser.add_option("-t", "--theta",       dest="theta",        help="Theta, default is 20",                          default=20,      type="float");
+parser.add_option("-s", "--timesplit",   dest="timesplit",    help="Split time in 2N_0 generations, default is 0.1", default=0.10,    type="float");
+parser.add_option("-f", "--destfolder",  dest="destfolder",   help="Output folder",                  default=None,    type="string");
+parser.add_option("-n", "--numsim",      dest="numsim",       help="Number of simulations, default is 100",          default=100,     type="int");
+parser.add_option(""  , "--branchl",     dest="branchlscale", help="Seq-gen branch scale, default is 0.00045",            default=0.00045, type="float");
+parser.add_option(""  , "--chrlen",      dest="lengthchr",    help="Chromosome length, default is 10kb",              default=10000,   type="int");
+parser.add_option("-c", "--numcont",     dest="numcont",      help="Number of present-day human contaminants, default is 2", default=2, type="int")
+parser.add_option("-e", "--numendo",     dest="numendo",      help="Number of ancient endogenous, default is 2",             default=2, type="int")
+
 
 
 
@@ -105,7 +107,8 @@ parser.add_option("-u", "--numtotalhum", dest="numtotalhum",help="Number of huma
 mscmd     = which("ms");
 seqgencmd = which("seq-gen");
 
-theta        = options.theta
+#theta        = options.theta
+theta        = 20
 timesplit    = options.timesplit
 destfolder   = options.destfolder
 numsim       = options.numsim
@@ -114,6 +117,8 @@ if(destfolder ==  None):
     print "Please specify the output folder";
     sys.exit(1);
 
+if(not destfolder.endswith("/")):
+    destfolder = destfolder +"/";
 
 
 
@@ -126,13 +131,23 @@ sumsizecontaminant = 0;
 timesplitms = timesplit / 2.0
 
 #numsamphum  = 6
-numtotalhum = options.numtotalhum;
-if(numtotalhum < 2 ):
-    print "Please specify at least 2 contaminant humans";
+numcont = options.numcont;
+numarch = options.numendo;
+
+if(numcont < 0 ):
+    print "Please specify a positive number of present-day human contaminant";
+    sys.exit(1);
+if(numarch < 0 ):
+    print "Please specify a positive number of ancient endogenous humans";
     sys.exit(1);
 
+if(numarch > 2 ):
+    print "Please specify a number of ancient endogenous humans lesser than 2";
+    sys.exit(1);
+
+
 #numtotalhum = 3 #2 humans for sample + 1 for reference
-numarch     = 2
+
 #seq-gen
 
 lengthchr    = options.lengthchr;
@@ -163,16 +178,15 @@ else:
 if os.path.exists(""+destfolder+"/ref.fa"):
     os.remove(""+destfolder+"/ref.fa");
 
-if os.path.exists(""+destfolder+"endo/endo.1.fa"):
-    os.remove(""+destfolder+"endo/endo.1.fa");
 
-if os.path.exists(""+destfolder+"endo/endo.2.fa"):
-    os.remove(""+destfolder+"endo/endo.2.fa");
+for idseq in range(1,numarch+1):
+    if os.path.exists(""+destfolder+"endo/endo."+str(idseq)+".fa"):
+        os.remove(""+destfolder+"endo/endo."+str(idseq)+".fa");
 
 
-for idseq in range((numtotalhum+1),(numtotalhum+1+numarch)):
-    if os.path.exists(""+destfolder+"cont/cont."+str(idseq-(numtotalhum+1))+".fa" ):
-        os.remove( ""+destfolder+"cont/cont."+str(idseq-(numtotalhum+1))+".fa" );
+for idseq in range((numarch+1+1),(numcont+1+numarch+1)):
+    if os.path.exists(""+destfolder+"cont/cont."+str(idseq-(numcont+1))+".fa" ):
+        os.remove( ""+destfolder+"cont/cont."+str(idseq-(numcont+1))+".fa" );
 
 
 
@@ -185,7 +199,7 @@ while i < (numsim+1):
 	originali += 1;    
 	infile_name = ""+destfolder+"/simul_"+str(i)+".txt"
 
-        commname = ""+mscmd+" "+str(numtotalhum+numarch)+" 1 -T -t "+str(theta)+" -I 2 "+str(numtotalhum)+" "+str(numarch)+" -ej "+str(timesplitms)+" 1 2 "
+        commname = ""+mscmd+" "+str(numcont+numarch+1)+" 1 -T -t "+str(theta)+" -I 2 "+str(numcont+1)+" "+str(numarch)+" -ej "+str(timesplitms)+" 1 2 "
         print commname
 
 	commname = commname + " > "+infile_name+"_tmp";
@@ -228,13 +242,14 @@ while i < (numsim+1):
 
 
                 #will be endogenous
-		for idseq in range(1,numtotalhum):
+		for idseq in range(1,numarch+1):
                     print "endo seq#"+str(idseq);
-                    arrayNeander.append( myid2seq[ str(idseq)  ] ); #ancSeq= myid2seq[ str(numtotalhum+1+numarch)  ];#anc
-                print "ref. seq#3";
+                    arrayNeander.append( myid2seq[ str(idseq)  ] ); #ancSeq= myid2seq[ str(numcont+1+numarch)  ];#anc
+
+                print "ref. seq#"+str(numarch+1);
 
                 #will be contaminant
-		for idseq in range((numtotalhum+1),(numtotalhum+1+numarch)):
+		for idseq in range((numarch+1+1),(numcont+1+numarch+1)):
                     print "cont seq#"+str(idseq);
                     arrayHumans.append( myid2seq[ str(idseq)  ] ); 			#print str(idseq);
 
@@ -243,18 +258,23 @@ while i < (numsim+1):
 
 
 
-		#take #3 as the reference
+		#take #(numarch+1) as the reference
 		fileHandleWriteREF = open (""+destfolder+"/ref.fa", 'a' ) ;
-		fileHandleWriteREF.write(">ref_"+str(originali)+ "\n"+myid2seq[ str(3)  ]+"\n");
+		fileHandleWriteREF.write(">ref_"+str(originali)+ "\n"+myid2seq[ str(numarch+1)  ]+"\n");
 		fileHandleWriteREF.close();
-                
-                fileHandleEndoSeq1 = open (""+destfolder+"endo/endo.1.fa", 'a' );
-                fileHandleEndoSeq1.write(">endo_"+str(originali)+ "\n"+myid2seq[ str(1)  ]+"\n");
-                fileHandleEndoSeq1.close();
 
-                fileHandleEndoSeq2 = open (""+destfolder+"endo/endo.2.fa", 'a' );
-                fileHandleEndoSeq2.write(">endo_"+str(originali)+ "\n"+myid2seq[ str(2)  ]+"\n");
-                fileHandleEndoSeq2.close();
+                for idseq in range(1,numarch+1):
+                    fileHandleEndoSeq1 = open (""+destfolder+"endo/endo."+str(idseq)+".fa", 'a' );
+                    fileHandleEndoSeq1.write(">endo_"+str(originali)+ "\n"+myid2seq[ str(idseq)  ]+"\n");
+                    fileHandleEndoSeq1.close();
+                    
+                #fileHandleEndoSeq1 = open (""+destfolder+"endo/endo.1.fa", 'a' );
+                #fileHandleEndoSeq1.write(">endo_"+str(originali)+ "\n"+myid2seq[ str(1)  ]+"\n");
+                #fileHandleEndoSeq1.close();
+
+                #fileHandleEndoSeq2 = open (""+destfolder+"endo/endo.2.fa", 'a' );
+                #fileHandleEndoSeq2.write(">endo_"+str(originali)+ "\n"+myid2seq[ str(2)  ]+"\n");
+                #fileHandleEndoSeq2.close();
 
 
                 segsites=0;
@@ -276,8 +296,8 @@ while i < (numsim+1):
                 print "Wrote segregating sites to "+str(destfolder)+"/endo/segsites";
 
 
-                for idseq in range((numtotalhum+1),(numtotalhum+1+numarch)):
-                    fileHandleContSeq = open (""+destfolder+"cont/cont."+str(idseq-(numtotalhum+1))+".fa", 'a' ) ;
+                for idseq in range((numarch+1+1),(numcont+1+numarch+1)):
+                    fileHandleContSeq = open (""+destfolder+"cont/cont."+str(idseq-(numcont+1))+".fa", 'a' ) ;
                     fileHandleContSeq.write(">cont_"+str(originali)+ "\n"+myid2seq[ str(idseq)  ]+"\n");
                 fileHandleContSeq.close();
 
