@@ -59,26 +59,46 @@ tracking"></a></div></noscript>
 
         <h3>
 <a id="welcome-to-github-pages" class="anchor" href="#welcome-to-github-pages" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>About</h3>
-<p>gargammel is a pipeline to simulate ancient DNA (aDNA) from a set of known references. gargammel seeks to emulate the in vivo process that leads to the sequencing of aDNA fragments. First fragments are collected from a set of reference sequences.  these reference sequences are designed to represent the endogenous DNA, the contaminant  from the same species (e.g.  present-day humans)  and bacterial sequences The patterns of mis-incorporations of ancient DNA fragments can be also accounted for. Second, aDNA damage is added to those fragments. Sequencing adapters are appended to form reads Of a specific length and, finally, sequencing errors with corresponding quality scores are applied to the reads.
+<p>gargammel is a pipeline to simulate ancient DNA (aDNA) from a set of known references. gargammel seeks to emulate the <i>in vivo</i> process that leads to the sequencing of aDNA fragments:
+<ol>
+<li> First, fragments are collected from a set of reference sequences.  these reference sequences are designed to represent the endogenous DNA, the contaminant  from the same species (e.g.  present-day humans)  and bacterial sequences The patterns of mis-incorporations of ancient DNA fragments can be also accounted for
+<li> Second, aDNA damage is added to those fragments. Sequencing adapters are appended to form reads Of a specific length
+<li> Finally, sequencing errors with corresponding quality scores are applied to the reads.
+<ol> 
 
-The resulting data is a set of Illumina reads that can  be used to ascertain certain hypotheses about aDNA.  Here is a potential set of questions that could be answered using our pipeline:
+The resulting data is a set of Illumina reads that can be used to test certain hypotheses about aDNA. Here is a potential set of questions that could be answered using our pipeline:
 
-<ol>	
+<ul>	
 <li> Impact of present-day human contamination on various statistics used in population genetics
-<li> Influence of high levels of the deamination on mapping
-<li> Impact of a high number of bacterial sequences on alignment to a specific reference 
-</ol>
+<li> Influence of high levels of deamination on mapping
+<li> Impact of a high number of bacterial sequences on alignment to a specific reference
+<li> Ability to infer the metagenomic profile of a sample depending on the aDNA fragment length distribution
+<li> Accuracy of contamination estimates
+</ul>
 
 To simulate Illumina sequencing errors,  we use the <a href="http://www.niehs.nih.gov/research/resources/software/biostatistics/art/">ART</a> package.</p>
 
+<h3>
+<a id="designer-templates" class="anchor" href="#designer-templates" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Submodules</h3>
+
+<p>gargammel is composed of the following subprograms:
+<ol>	
+<li> <b>fragSim</b>: simulation of DNA fragmentation due to degradation. Ability to simulate the DNA composition at the 5'/3' ends of the fragments
+<li> <b>deamSim</b>: program to add <i>in silico</i> damage (or deamination) to the DNA fragments
+<li> <b>apdtSim</b>: module to transform the fragments (damaged or not) into raw Illumina reads
+</ol>
+
+The 3 programs were written in C++. There is driver script in Perl that automates the process and simulates the <i>in vivo</i> process that generates aDNA fragments and calls <a href="http://www.niehs.nih.gov/research/resources/software/biostatistics/art/">ART</a> to add sequencing errors. 
+
+</p>
 
 <h3>
-<a id="designer-templates" class="anchor" href="#designer-templates" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Documentation</h3>
+<a id="designer-templates" class="anchor" href="#designer-templates" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Documentation and examples of usage</h3>
 
 <p>For installation, usage and other questions please refer to the README.</p>
 
 <h3>
-<a id="creating-pages-manually" class="anchor" href="#creating-pages-manually" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Support</h3>
+<a id="creating-pages-manually" class="anchor" href="#creating-pages-manually" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Support/Feature request/Push requests</h3>
 
 <p>
 <p>Please contact <a href="https://grenaud.github.io/">Gabriel Renaud</a> (<a href="https://github.com/grenaud" class="user-mention">@grenaud</a>) for further information:
