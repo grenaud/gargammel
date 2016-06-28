@@ -2,9 +2,15 @@ SHELL := /bin/bash
 
 
 
-all: 	src/fragSim art_src_MountRainier_Linux/art_illumina_src/art_illumina.o
+all: 	src/fragSim src/deamSim src/adptSim art_src_MountRainier_Linux/art_illumina_src/art_illumina.o
 
 src/fragSim: libgab/utils.o bamtools/lib/libbamtools.so
+	make -C src
+
+src/deamSim: libgab/utils.o bamtools/lib/libbamtools.so
+	make -C src
+
+src/adptSim: libgab/utils.o bamtools/lib/libbamtools.so
 	make -C src
 
 libgab/utils.h:
