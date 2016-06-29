@@ -181,6 +181,7 @@ You could generate it manually, the format is as follows:
     [chr]	['5p' or '3p']	['+' or '-']	[pos wrt the 5p/3p end]	[count A]	[count C]	[count G]	[count T]	[sum of counts]
  
 For instance:
+
 	# table produced by mapDamage version 2.0.5-1-ge06bd84
 	# using mapped file Ust_Ishim.hg19_1000g.bam and human_g1k_v37.fasta as reference file
 	# Chr: reference from sam/bam header, End: from which termini of DNA sequences, Std: strand of reads
