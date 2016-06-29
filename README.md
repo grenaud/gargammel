@@ -119,27 +119,27 @@ Here are further examples of usage:
 
 * Generating exactly 1M fragments of length with a log-normal distribution of location 4.106487474 and scale 0.358874723:
 
-    gargammel.pl -n 1000000  --comp 0,0,1 --loc  4.106487474 --scale  0.358874723   -o data/simulation data/
+`gargammel.pl -n 1000000  --comp 0,0,1 --loc  4.106487474 --scale  0.358874723   -o data/simulation data/`
 
 * High coverage (20X) with high amount of present-day contamination (40%) with fragments of length 45:
 
-    gargammel.pl -c 20  --comp 0,0.4,0.6 -l 45    -o data/simulation data/
+`gargammel.pl -c 20  --comp 0,0.4,0.6 -l 45 -o data/simulation data/`
 
 * Evaluating the impact of mapping 1M fragments with length 40 without double-stranded deamination:
 
-    gargammel.pl -n 1000000  --comp 0,0,1 -l 40    -o data/simulation data/
+`gargammel.pl -n 1000000  --comp 0,0,1 -l 40    -o data/simulation data/`
 
 * Evaluating the impact of mapping 1M fragments    with length 40 with double-stranded deamination:
 
-    gargammel.pl -n 1000000  --comp 0,0,1 -l 40 -briggs 0.03,0.4,0.01,0.3   -o data/simulation data/
+`gargammel.pl -n 1000000  --comp 0,0,1 -l 40 -briggs 0.03,0.4,0.01,0.3   -o data/simulation data/`
 
 * Generate a single-end run of 96 cycles on a HiSeq 2500 Illumina run with 1M fragments of 40bp:
 
-    gargammel.pl -n 1000000  --comp 0,0,1 -l 40 -rl 96  -se -ss HS25 -o data/simulation data/
+`gargammel.pl -n 1000000  --comp 0,0,1 -l 40 -rl 96  -se -ss HS25 -o data/simulation data/`
 
 * Generate a paired-end run of 96 cycles on a HiSeq 2500 Illumina run with 1M fragments of 40bp:
 
-    gargammel.pl -n 1000000  --comp 0,0,1 -l 40 -rl 96      -ss HS25 -o data/simulation data/
+`gargammel.pl -n 1000000  --comp 0,0,1 -l 40 -rl 96      -ss HS25 -o data/simulation data/`
 
 
 
