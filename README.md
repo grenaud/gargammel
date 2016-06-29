@@ -25,15 +25,18 @@ Requirements:
 * git
 * c++ compiler supporting C11++
 * cmake, you can install on Ubuntu by typing:
-    sudo apt install cmake
+
+     sudo apt install cmake
 * zlib
 * lib gsl, you can install on Ubuntu by typing:
-    sudo apt-get install libgsl0-dev
+
+     sudo apt-get install libgsl0-dev
 
 If you plan on using ms2chromosomes.py to simulate chromosomes based on ms, you also need: 
  * Hudson's ms (see: http://home.uchicago.edu/rhudson1/source/mksamples.html)
  * seq-gen, you can install on Ubuntu by typing:
-    sudo apt install seq-gen
+
+     sudo apt install seq-gen
 
 Both should be installed in your path. 
 
