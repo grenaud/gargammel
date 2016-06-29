@@ -115,6 +115,7 @@ Here are further examples of usage:
 
 * Low coverage 0.5X coverage with fragments of length 40:
 
+
     gargammel.pl -c 0.5  --comp 0,0,1 -l 40    -o data/simulation data/
 
 * Generating exactly 1M fragments of length with a log-normal distribution of location 4.106487474 and scale 0.358874723:
