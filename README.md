@@ -79,6 +79,7 @@ This is an example of usage to simulate a slightly contaminated (10%) dataset. F
     mkdir data
   
 Next we will create 1000 simulations of 2 lineages that are allowed to coalesce after 0.2 units of coalescence. The first one will represent our endogenous ancient human while the other, the present-day human contaminant. It will also generate an additiona chromosome from the same population as the contaminant to be used as reference for alignment . We generate sequences for those using the following script:
+
     cd data/
     python ../ms2chromosomes.py  -s 0.2 -f . -n 1000 
     rm -rfv simul_* seedms #cleanup
