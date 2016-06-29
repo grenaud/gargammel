@@ -96,7 +96,7 @@ The segsites files corresponds to heterozygous sites between both endogenous gen
 
 Then we will create the aDNA fragments:
   cd ..
-  ./gargammel.pl -c 3  --comp 0,0.08,0.92 -s src/sizedist.size.gz  -matfile src/matrices/single-3.  -o data/simulation data/
+  ./gargammel.pl -c 3  --comp 0,0.08,0.92 -s src/sizedist.size.gz  -matfile src/matrices/single-  -o data/simulation data/
 
 This will simulated a dataset with 8% human contamination. The deamination rate that will be used will follow a single-strand deamination using the empirical rates measured from the Loschbour individual from:
 

@@ -1,10 +1,11 @@
-#!/usr/bin/env python
+#!usr/bin/env python
 
 import subprocess
 from optparse import OptionParser
 import sys, os, random
 import time;
 import numpy as np
+import re
 from scipy import stats
 from collections import Counter,defaultdict
 from operator import itemgetter 
@@ -59,7 +60,7 @@ def which(program):
             sys.exit(1);
             
 
-	
+    
 
     return out;
 
@@ -104,8 +105,9 @@ parser.add_option("-e", "--numendo",     dest="numendo",      help="Number of an
 (options,args) = parser.parse_args()
 
 #detecting programs
-mscmd     = which("ms");
-seqgencmd = which("seq-gen");
+mscmd     = re.sub('\s+','',which("ms"));
+seqgencmd = re.sub('\s+','',which("seq-gen"));
+
 
 #theta        = options.theta
 theta        = 20
