@@ -198,6 +198,7 @@ For instance:
 The lines above specify the base count close +/- 4 bases to the 3p end for fragments mapping to the + strand. An example of this type of file is found here: src/dnacomp.txt
 
 Such a file can be generated using mapDamage2.0: 
+
 	Jónsson, Hákon, et al. "mapDamage2. 0: fast approximate Bayesian estimates of ancient DNA damage parameters." Bioinformatics (2013): btt193.
 
 It is normally called "dnacomp.txt" in the output directory, you can filter a single chromosome (in this case 21) using this command:
