@@ -82,6 +82,7 @@ Next we will create 1000 simulations of 2 lineages that are allowed to coalesce 
     rm -rfv simul_* seedms #cleanup
   
 This will create the following files:
+
     cont/cont.0.fa
     cont/cont.1.fa
     endo/endo.1.fa
@@ -93,6 +94,7 @@ The segsites files corresponds to heterozygous sites between both endogenous gen
 
 
 Then we will create the aDNA fragments:
+
     cd ..
     ./gargammel.pl -c 3  --comp 0,0.08,0.92 -s src/sizedist.size.gz  -matfile src/matrices/single-  -o data/simulation data/
 
