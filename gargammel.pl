@@ -197,7 +197,7 @@ sub usage
   "\t\t\t\t\t\tspecies 5% will be contamination and 95% will be endogenous\n".
   "\t\t\t\t\t\tDefault: --comp ".$comp."\n".
  "\t--mock\t\t\t\t\tDo nothing, just print the commands that will be run\n".
-  "\t-o\t\t\tOutput prefix (default: [input dir]/simadna)\n".
+  "\t-o\t\t\t\t\tOutput prefix (default: [input dir]/simadna)\n".
   " Either specify:\n".
   "\t\t-n\t[number]\t\tGenerate [number] fragments (default: ".$numberOfFragments.")\n".
   "\t\t-c\t[coverage]\t\tEndogenous coverage\n".
@@ -427,7 +427,7 @@ if( (defined $briggs) ){
 
 if( (defined $matfile) &&
     (defined $briggs)  ){
-  die "Specify either -matfile or -briggs\n";
+  die "Specify either -matfile or -briggs but not both\n";
 }
 
 

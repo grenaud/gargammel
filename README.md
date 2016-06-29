@@ -111,6 +111,40 @@ The read size will be 2x75bp and the Illumina platform being simulated is the Hi
     data/out_s2.fq.gz
 
 
+Here are further examples of usage:
+
+* Low coverage 0.5X coverage with fragments of length 40:
+
+    gargammel.pl -c 0.5  --comp 0,0,1 -l 40    -o data/simulation data/
+
+* Generating exactly 1M fragments of length with a log-normal distribution of location 4.106487474 and scale 0.358874723:
+
+    gargammel.pl -n 1000000  --comp 0,0,1 --loc  4.106487474 --scale  0.358874723   -o data/simulation data/
+
+* High coverage (20X) with high amount of present-day contamination (40%) with fragments of length 45:
+
+    gargammel.pl -c 20  --comp 0,0.4,0.6 -l 45    -o data/simulation data/
+
+* Evaluating the impact of mapping 1M fragments with length 40 without double-stranded deamination:
+
+    gargammel.pl -n 1000000  --comp 0,0,1 -l 40    -o data/simulation data/
+
+* Evaluating the impact of mapping 1M fragments    with length 40 with double-stranded deamination:
+
+    gargammel.pl -n 1000000  --comp 0,0,1 -l 40 -briggs 0.03,0.4,0.01,0.3   -o data/simulation data/
+
+* Generate a single-end run of 96 cycles on a HiSeq 2500 Illumina run with 1M fragments of 40bp:
+
+    gargammel.pl -n 1000000  --comp 0,0,1 -l 40 -rl 96  -se -ss HS25 -o data/simulation data/
+
+* Generate a paired-end run of 96 cycles on a HiSeq 2500 Illumina run with 1M fragments of 40bp:
+
+    gargammel.pl -n 1000000  --comp 0,0,1 -l 40 -rl 96      -ss HS25 -o data/simulation data/
+
+
+
+
+
 Specifying damage/deamination:
 -------------------------------------------------------------------------------------
 
@@ -136,6 +170,60 @@ This follows the output of https://bitbucket.org/ustenzel/damage-patterns.git
 
     Lazaridis, Iosif, et al. "Ancient human genomes suggest three ancestral populations for present-day Europeans." Nature 513.7518 (2014): 409-413.
 
+
+How can I get an ancient misincorporation profile for gargammel?
+-------------------------------------------------------------------------------------
+
+You could generate it manually, the format is as follows:
+
+    # comment
+    Chr	End	Std	Pos	A	C	G	T	Total
+    [chr]	['5p' or '3p']	['+' or '-']	[pos wrt the 5p/3p end]	[count A]	[count C]	[count G]	[count T]	[sum of counts]
+ 
+For instance:
+	# table produced by mapDamage version 2.0.5-1-ge06bd84
+	# using mapped file Ust_Ishim.hg19_1000g.bam and human_g1k_v37.fasta as reference file
+	# Chr: reference from sam/bam header, End: from which termini of DNA sequences, Std: strand of reads
+	Chr	End	Std	Pos	A	C	G	T	Total
+	21	3p	+	-4	177086	83624	114115	150943	525768
+	21	3p	+	-3	191241	80099	104155	150269	525764
+	21	3p	+	-2	197747	63995	127660	136360	525762
+	21	3p	+	-1	180637	49770	79519	215833	525759
+	21	3p	+	1	188505	79678	204246	53417	525846
+	21	3p	+	2	156848	74009	128222	166767	525846
+	21	3p	+	3	188608	75382	113613	148243	525846
+	21	3p	+	4	173245	84205	117226	151170	525846
+
+The lines above specify the base count close +/- 4 bases to the 3p end for fragments mapping to the + strand. An example of this type of file is found here: src/dnacomp.txt
+
+Such a file can be generated using mapDamage2.0: 
+	Jónsson, Hákon, et al. "mapDamage2. 0: fast approximate Bayesian estimates of ancient DNA damage parameters." Bioinformatics (2013): btt193.
+
+It is normally called "dnacomp.txt" in the output directory, you can filter a single chromosome (in this case 21) using this command:
+
+	grep "^21\|^#\|^Chr"  /path to mapDamage output/results_[sample name]/dnacomp.txt >  dnacomp.txt
+
+
+
+
+How can I get parameters for the size distribution?
+-------------------------------------------------------------------------------------
+
+If you wish to specify the aDNA fragment size distribution as a log-normal, you can use the following script to infer the location and scale parameters:
+
+	#!/usr/bin/env Rscript-3.2.0
+	library(fitdistrplus)
+	library(MASS)
+		
+	args=(commandArgs(TRUE))
+	
+	data <- read.table(args[1]);
+		
+	df<-fitdistr(data$V1, "lognormal")
+	
+	print(df);
+
+You can change the header to suit the version of R that you have.
 
 Bacterial databases:
 -------------------------------------------------------------------------------------
