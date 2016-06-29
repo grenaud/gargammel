@@ -63,9 +63,9 @@ Input description:
 -------------------------------------------------------------------------------------
 
 The basic input is a directory with 3 subfolders named:
- * endo
- * cont
- * bact
+ * endo/
+ * cont/
+ * bact/
 
 Which represent the endogenous ancient human, the present-day human contaminant and the bacterial contamination respectively. Each file inside represents a genome (nor a chromosome or scaffold). The endogenous ancient human can only contain more than 2 genomes since it is a diploid individual. For the bacterial contamination, please add a representative set of bacteria for your sample. Please see the section about the examples of bacterial databases.
 
@@ -76,12 +76,12 @@ Example of usage:
 
 This is an example of usage to simulate a slightly contaminated (10%) dataset. First we will simulate chromosomes using ms and seq-gen:
 
-  mkdir data
+    mkdir data
   
 Next we will create 1000 simulations of 2 lineages that are allowed to coalesce after 0.2 units of coalescence. The first one will represent our endogenous ancient human while the other, the present-day human contaminant. It will also generate an additiona chromosome from the same population as the contaminant to be used as reference for alignment . We generate sequences for those using the following script:
-  cd data/
-  python ../ms2chromosomes.py  -s 0.2 -f . -n 1000 
-  rm -rfv simul_* seedms #cleanup
+    cd data/
+    python ../ms2chromosomes.py  -s 0.2 -f . -n 1000 
+    rm -rfv simul_* seedms #cleanup
   
 This will create the following files:
   cont/cont.0.fa
