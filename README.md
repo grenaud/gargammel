@@ -24,19 +24,13 @@ Requirements:
 -------------------------------------------------------------------------------------
 * git
 * c++ compiler supporting C11++
-* cmake, you can install on Ubuntu by typing:
-
-     sudo apt install cmake
+* cmake, you can install on Ubuntu by typing: sudo apt install cmake
 * zlib
-* lib gsl, you can install on Ubuntu by typing:
-
-     sudo apt-get install libgsl0-dev
+* lib gsl, you can install on Ubuntu by typing: sudo apt-get install libgsl0-dev
 
 If you plan on using ms2chromosomes.py to simulate chromosomes based on ms, you also need: 
  * Hudson's ms (see: http://home.uchicago.edu/rhudson1/source/mksamples.html)
- * seq-gen, you can install on Ubuntu by typing:
-
-     sudo apt install seq-gen
+ * seq-gen, you can install on Ubuntu by typing:   sudo apt install seq-gen
 
 Both should be installed in your path. 
 
@@ -88,33 +82,33 @@ Next we will create 1000 simulations of 2 lineages that are allowed to coalesce 
     rm -rfv simul_* seedms #cleanup
   
 This will create the following files:
-  cont/cont.0.fa
-  cont/cont.1.fa
-  endo/endo.1.fa
-  endo/endo.2.fa
-  endo/segsites
-  ref.fa
+    cont/cont.0.fa
+    cont/cont.1.fa
+    endo/endo.1.fa
+    endo/endo.2.fa
+    endo/segsites
+    ref.fa
 
 The segsites files corresponds to heterozygous sites between both endogenous genomes.
 
 
 Then we will create the aDNA fragments:
-  cd ..
-  ./gargammel.pl -c 3  --comp 0,0.08,0.92 -s src/sizedist.size.gz  -matfile src/matrices/single-  -o data/simulation data/
+    cd ..
+    ./gargammel.pl -c 3  --comp 0,0.08,0.92 -s src/sizedist.size.gz  -matfile src/matrices/single-  -o data/simulation data/
 
 This will simulated a dataset with 8% human contamination. The deamination rate that will be used will follow a single-strand deamination using the empirical rates measured from the Loschbour individual from:
 
-   Lazaridis, Iosif, et al. "Ancient human genomes suggest three ancestral populations for present-day Europeans." Nature 513.7518 (2014): 409-413.
+    Lazaridis, Iosif, et al. "Ancient human genomes suggest three ancestral populations for present-day Europeans." Nature 513.7518 (2014): 409-413.
 
 
 The size distribution of the aDNA fragments is from a subset of:
 
-   Fu, Qiaomei, et al. "Genome sequence of a 45,000-year-old modern human from western Siberia." Nature 514.7523 (2014): 445-449. 
+    Fu, Qiaomei, et al. "Genome sequence of a 45,000-year-old modern human from western Siberia." Nature 514.7523 (2014): 445-449. 
 
 The read size will be 2x75bp and the Illumina platform being simulated is the HiSeq 2500. The final reads will be found:
 
-   data/out_s1.fq.gz
-   data/out_s2.fq.gz
+    data/out_s1.fq.gz
+    data/out_s2.fq.gz
 
 
 Specifying damage/deamination:
@@ -131,9 +125,9 @@ If you use gargammel.pl or deamSim, you can speficiy deamination/damage using ei
 The pos. is the position 0,1... after the fragment beginning/end. The rate is specified using the following: estimate  [estimate_low estimate_high]. For example, 0.3 [0.2 0.4] means that the rate of deamination is 0.3 or 30%.
 
 example of a format:
-    	A->C	A->G	A->T	C->A	C->G	C->T	G->A	G->C	G->T	T->A	T->C	T->G
-    0	1.853e-3 [1.726e-3..1.989e-3]	4.064e-3 [3.875e-3..4.263e-3]	3.269e-3 [3.099e-3..3.448e-3]	6.661e-3 [6.254e-3..7.094e-3] 3.057e-3 [2.785e-3..3.355e-3] 8.004e-2 [7.865e-2..8.145e-2] 1.236e-2 [    1.183e-2..1.292e-2] 4.131e-3 [3.828e-3..4.459e-3] 6.703e-3 [6.314e-3..7.116e-3] 3.845e-3 [3.624e-3..4.079e-3] 4.581e-3 [4.339e-3..4.836e-3] 2.169e-3 [2.005e-3..2.347e-3]
-    1	1.986e-3 [1.849e-3..2.134e-3]	4.273e-3 [4.070e-3..4.487e-3]	3.030e-3 [2.859e-3..3.211e-3]	5.357e-3 [5.001e-3..5.738e-3] 3.188e-3 [2.916e-3..3.485e-3] 1.427e-2 [1.369e-2..1.488e-2] 9.514e-3 [    9.075e-3..9.974e-3]	3.316e-3 [3.061e-3..3.593e-3] 5.061e-3 [4.743e-3..5.400e-3] 3.421e-3 [3.216e-3..3.639e-3] 4.865e-3 [4.620e-3..5.124e-3]	2.201e-3 [2.038e-3..2.377e-3]
+	A->C	A->G	A->T	C->A	C->G	C->T	G->A	G->C	G->T	T->A	T->C	T->G
+	0	1.853e-3 [1.726e-3..1.989e-3]	4.064e-3 [3.875e-3..4.263e-3]	3.269e-3 [3.099e-3..3.448e-3]	6.661e-3 [6.254e-3..7.094e-3] 3.057e-3 [2.785e-3..3.355e-3] 8.004e-2 [7.865e-2..8.145e-2] 1.236e-2 [    1.183e-2..1.292e-2] 4.131e-3 [3.828e-3..4.459e-3] 6.703e-3 [6.314e-3..7.116e-3] 3.845e-3 [3.624e-3..4.079e-3] 4.581e-3 [4.339e-3..4.836e-3] 2.169e-3 [2.005e-3..2.347e-3]
+	1	1.986e-3 [1.849e-3..2.134e-3]	4.273e-3 [4.070e-3..4.487e-3]	3.030e-3 [2.859e-3..3.211e-3]	5.357e-3 [5.001e-3..5.738e-3] 3.188e-3 [2.916e-3..3.485e-3] 1.427e-2 [1.369e-2..1.488e-2] 9.514e-3 [    9.075e-3..9.974e-3]	3.316e-3 [3.061e-3..3.593e-3] 5.061e-3 [4.743e-3..5.400e-3] 3.421e-3 [3.216e-3..3.639e-3] 4.865e-3 [4.620e-3..5.124e-3]	2.201e-3 [2.038e-3..2.377e-3]
 
 This follows the output of https://bitbucket.org/ustenzel/damage-patterns.git
 
@@ -147,7 +141,7 @@ Bacterial databases:
 
 If you simply want to use a uniform probability and do not wish to use a weighted list, if for instance your data is in input/bact/ in fasta files ending with .fa, simply type:
 
-total=`ls -1  input/bact/*fa |wc -l ` && ls -1 input/bact/*fa  | awk -v total="$total" ' {print $1"\t"(1/total)}' > input/bact/list
+    total=`ls -1  input/bact/*fa |wc -l ` && ls -1 input/bact/*fa  | awk -v total="$total" ' {print $1"\t"(1/total)}' > input/bact/list
 
 
 Example bacterial databases:
