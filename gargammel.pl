@@ -841,34 +841,38 @@ if (0) {
     }
   }
 } else {
-  my $digitfb= log($numberOfFragmentsB)/log(10) +1;
-  for (my $i=0;$i<$numberOfFragmentsB;$i++) {
-    if($i!=0&&
-       ($i%100000)==0){
-      print  STDERR "selected ".sprintf("%".$digitfb."s",$i)." bacterial fragments\n";
-    }
 
-    #print  $i."\n";
-    my $randP=rand();
-    my $indexFound=-1;
-    #print  $randP."\n";
-    for(my $i=1;$i<=$#arrayofFilesbactLFromListP;$i++){
-      #print "prob ".$randP." ".$arrayofFilesbactLFromListP[$i-1]." ".$arrayofFilesbactLFromListP[$i];
-      if( ($arrayofFilesbactLFromListP[$i-1]<=$randP) &&
-	  ($arrayofFilesbactLFromListP[$i]  >=$randP) ){
-	$indexFound=$i-1;
+  if ($numberOfFragmentsB>0) {
+    my $digitfb= log($numberOfFragmentsB)/log(10) +1;
+    for (my $i=0;$i<$numberOfFragmentsB;$i++) {
+      if ($i!=0&&
+	  ($i%100000)==0) {
+	print  STDERR "selected ".sprintf("%".$digitfb."s",$i)." bacterial fragments\n";
+      }
+
+      #print  $i."\n";
+      my $randP=rand();
+      my $indexFound=-1;
+      #print  $randP."\n";
+      for (my $i=1;$i<=$#arrayofFilesbactLFromListP;$i++) {
+	#print "prob ".$randP." ".$arrayofFilesbactLFromListP[$i-1]." ".$arrayofFilesbactLFromListP[$i];
+	if ( ($arrayofFilesbactLFromListP[$i-1]<=$randP) &&
+	     ($arrayofFilesbactLFromListP[$i]  >=$randP) ) {
+	  $indexFound=$i-1;
+	  #die;
+	  last;
+	}
+      }
+
+      if ($indexFound != -1) {
+	$arrayofFilesbactToExtract[$indexFound]++;
+      } else {
+	$i--;			#restart iteration
 	#die;
-	last;
       }
     }
-
-    if($indexFound != -1){
-      $arrayofFilesbactToExtract[$indexFound]++;
-    }else{
-      $i--;#restart iteration
-      #die;
-    }
   }
+
 }
 
 
