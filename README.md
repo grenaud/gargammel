@@ -133,7 +133,7 @@ Here are further examples of usage:
 
 * Evaluating the impact of mapping 1M fragments    with length 40 with double-stranded deamination:
 
-`gargammel.pl -n 1000000  --comp 0,0,1 -l 40 -briggs 0.03,0.4,0.01,0.3   -o data/simulation data/`
+`gargammel.pl -n 1000000  --comp 0,0,1 -l 40 -damage 0.03,0.4,0.01,0.3   -o data/simulation data/`
 
 * Generate a single-end run of 96 cycles on a HiSeq 2500 Illumina run with 1M fragments of 40bp:
 

@@ -98,7 +98,7 @@ int main (int argc, char *argv[]) {
                               "\t\t"+"                               " +"\t\t"+"Single strand will have C->T damage on both ends"+"\n"+
                               "\t\t"+"                               " +"\t\t"+"Double strand will have and C->T at the 5p end and G->A damage at the 3p end"+"\n"+
 
-			      "\t\t"+"-briggs     [v,l,d,s]" +"\t\t\t"+"For the Briggs et al. 2007 model"+"\n"+
+			      "\t\t"+"-damage     [v,l,d,s]" +"\t\t\t"+"For the Briggs et al. 2007 model"+"\n"+
                               "\t\t"+"                               " +"\t\t"+"The parameters must be comma-separated e.g.: -briggs 0.03,0.4,0.01,0.7"+"\n"+
                               "\t\t"+"                               " +"\t\t"+"\tv: nick frequency"+"\n"+
                               "\t\t"+"                               " +"\t\t"+"\tl: length of overhanging ends (geometric parameter)"+"\n"+
@@ -117,7 +117,10 @@ int main (int argc, char *argv[]) {
         return 1;
     }
 
-  
+#ifdef DEBUG
+    string  substiString[]={"A>C","A>G","A>T","C>A","C>G","C>T","G>A","G>C","G>T","T>A","T>C","T>G"};
+#endif
+
     for(int i=1;i<(argc-1);i++){ //all but the last 3 args
 	
 
@@ -147,7 +150,7 @@ int main (int argc, char *argv[]) {
 	    continue;
 	}
 
-	if(string(argv[i]) == "-briggs" ){
+	if(string(argv[i]) == "-damage" ){
 	    string parametersB          = string(argv[i+1]);
 	    useBriggs                   = true;
 	    vector<string> temps=allTokens(parametersB,',');
@@ -273,8 +276,23 @@ int main (int argc, char *argv[]) {
 		substitutionRates toadd;
 		for(unsigned int i=0;i<firstFields.size();i++){		
 		    toadd.s[i]=destringify<double>(firstFields[i]);
-		    //cout<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
+#ifdef DEBUG
+		    cout<<sub5p.size()<<"\t"<<substiString[i]<<"\t"<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
+#endif
 		}	
+
+
+		for(int b=0;b<4;b++){		
+		    double sum =0.0;
+		    for(int a=0;a<3;a++){		
+			int idx = b*3+a;
+			sum+=toadd.s[idx];
+		    }
+		    if(sum>1.0){
+			cerr<<"Problem with line "<<line<<" in file "<<deam5File<<" the sum of the substitution probabilities exceeds 1"<<endl;
+			return 1;
+		    }
+		}
 
 		sub5p.push_back(toadd);
 		//return 1;
@@ -318,8 +336,26 @@ int main (int argc, char *argv[]) {
 		substitutionRates toadd;
 		for(unsigned int i=0;i<firstFields.size();i++){		
 		    toadd.s[i]=destringify<double>(firstFields[i]);
+
+#ifdef DEBUG
+		    cout<<sub3p.size()<<"\t"<<substiString[i]<<"\t"<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
+#endif
+
 		    //cout<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
 		}	
+
+		for(int b=0;b<4;b++){		
+		    double sum =0.0;
+		    for(int a=0;a<3;a++){		
+			int idx = b*3+a;
+			sum+=toadd.s[idx];
+		    }
+		    if(sum>1.0){
+			cerr<<"Problem with line "<<line<<" in file "<<deam3File<<" the sum of the substitution probabilities exceeds 1"<<endl;
+			return 1;
+		    }
+		}
+		
 
 		sub3p.push_back(toadd);
 		//return 1;
@@ -565,68 +601,212 @@ int main (int argc, char *argv[]) {
 	    }//overhangs do not meet
 
 	}else{
-	    //MATRIX FILE
-	    if(singleDeam){ //Single strand will have C->T damage on both ends
+
+	    if(matrixFileSpecified){
+		
+		 for(int i=0;i<int(seq.size());i++){
+		     if(!isResolvedDNA(seq[i]))
+			 continue;
+		     double sumProb [5];
+		     double _sumProb[5];
+
+		     sumProb[0]  = 0.0;
+		     _sumProb[0] = 0.0;
+		     
+
+		     //5p
+		     if(i<(int(seq.size())/2)){
+			 int b = baseResolved2int(seq[i]);
+			 double sum=0.0;
+			 for(int a=0;a<4;a++){
+			     if(a==b)
+				 continue;
+			     int idx;
+			     if(a<b)
+				 idx = b*3+a;
+			     else
+				 idx = b*3+(a-1);			     
+			     sum += sub5p[i].s[idx];
+			     _sumProb[a+1] = sub5p[i].s[idx];
+			 }
+			 _sumProb[b+1] = 1.0 - sum;
+
+			 double s=0;
+			 for(int a=0;a<5;a++){			     
+			     s += _sumProb[a];
+			     sumProb[a]  = s;
+			 }
+
+#ifdef DEBUG
+			 for(int a=0;a<5;a++){
+			     cout<<"5p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<"XACGT"[a]<<"\t"<<_sumProb[a]<<endl;
+			 }
+#endif
+			 
+
+			 
+			 double p = randomProb();
+			 //bool f=false;
+			 for(int a=0;a<4;a++){
+			     if( (sumProb[a]    <= p ) 
+				 &&
+				 (sumProb[a+1]  >= p ) ){				 
+
+				 seq[i] = "ACGT"[a];
+				 //f=true;
+				 if(a!=b){
+				     deamPos.push_back(i+1);
+				     deaminated=true;
+				 }
+
+				 break;
+			     }
+			 }
+
+			 // if(b==1 && 
+			 //    i==0){
+			 //     for(int a=0;a<5;a++){
+			 // 	 cout<<"test\t5p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<"XACGT"[a]<<"\t"<<sumProb[a]<<"\t"<<p<<"\t"<<vectorToString(deamPos)<<endl;
+			 //     }
+			 //     cout<<"deam\t5p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<seq[i]<<"\t"<<p<<"\t"<<vectorToString(deamPos)<<endl;			     
+			 // }
+
+
+			 // if(b==1){
+			 //     for(int a=0;a<5;a++){
+			 // 	 cout<<"5p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<"ACGT"[b]<<"\t"<<seq[i]<<endl;
+			 //     }
+			 // }
+			 			 
+		     }
+		     //3p
+		     else{
+
+			 int b = baseResolved2int(seq[i]);
+			 double sum=0.0;
+			 for(int a=0;a<4;a++){
+			     if(a==b)
+				 continue;
+			     int idx;
+			     if(a<b)
+				 idx = b*3+a;
+			     else
+				 idx = b*3+(a-1);			     
+			     sum += sub3p[ int(seq.size())-i-1 ].s[idx];
+			     _sumProb[a+1] = sub3p[ int(seq.size())-i-1 ].s[idx];
+			 }
+			 _sumProb[b+1] = 1.0 - sum;
+
+
+			 double s=0;
+			 for(int a=0;a<5;a++){			     
+			     s += _sumProb[a];
+			     sumProb[a]  = s;
+			 }
+			 
+#ifdef DEBUG
+			 for(int a=0;a<5;a++){
+			     cout<<"3p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t3p\t"<<"XACGT"[a]<<"\t"<<sumProb[a]<<endl;
+			 }
+#endif
+
+
+			 
+			 double p = randomProb();
+			 //bool f=false;
+			 for(int a=0;a<4;a++){
+			     if( (sumProb[a]    <= p ) 
+				 &&
+				 (sumProb[a+1]  >= p ) ){				 
+				 seq[i] = "ACGT"[a];
+				 if(a!=b){
+				     deamPos.push_back( -(int(seq.size())-i ) );
+				     deaminated=true;
+				 }
+				 //f=true;
+				 break;
+			     }
+			 }
+
+			 // if(b==1 && 
+			 //    i==(int(seq.size())-1) ){
+
+			 //     for(int a=0;a<5;a++){
+			 // 	 cout<<"test\t3p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<"XACGT"[a]<<"\t"<<sumProb[a]<<"\t"<<p<<"\t"<<vectorToString(deamPos)<<endl;
+			 //     }
+
+			 //     cout<<"deam\t3p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<seq[i]<<"\t"<<p<<"\t"<<vectorToString(deamPos)<<endl; 	     
+			 // }
+
+
+		     }
+		 }
+
+	    }else{
+
+		//MATRIX FILE
+		if(singleDeam){ //Single strand will have C->T damage on both ends
 	    
-		//5p
-		for(int i=0;
-		    i<int(seq.size());
-		    i++){
-		    if(seq[i] == 'C'){
-			if( randomProb() < sub5p[i].s[5] ){
-			    deamPos.push_back(i+1);
-			    seq[i] = 'T';
-			    deaminated=true;
+		    //5p
+		    for(int i=0;
+			i<int(seq.size());
+			i++){
+			if(seq[i] == 'C'){
+			    if( randomProb() < sub5p[i].s[5] ){
+				deamPos.push_back(i+1);
+				seq[i] = 'T';
+				deaminated=true;
+			    }
 			}
 		    }
-		}
 
-		//3p
-		for(int i=0;
-		    i<int(seq.size());
-		    i++){
-		    if(seq[i] == 'C'){
-			if( randomProb() < sub3p[ int(seq.size())-i-1 ].s[5] ){		
-			    deamPos.push_back( -(int(seq.size())-i));
-			    seq[i] = 'T';
-			    deaminated=true;
+		    //3p
+		    for(int i=0;
+			i<int(seq.size());
+			i++){
+			if(seq[i] == 'C'){
+			    if( randomProb() < sub3p[ int(seq.size())-i-1 ].s[5] ){		
+				deamPos.push_back( -(int(seq.size())-i));
+				seq[i] = 'T';
+				deaminated=true;
+			    }
 			}
 		    }
+
+
+
 		}
 
-
-
-	    }
-
-	    if(doubleDeam){ //Double strand will have and C->T at the 5p end and G->A damage at the 3p end
+		if(doubleDeam){ //Double strand will have and C->T at the 5p end and G->A damage at the 3p end
 	    
-		//5p
-		for(int i=0;
-		    i<int(seq.size());
-		    i++){
-		    if(seq[i] == 'C'){
-			if( randomProb() < sub5p[i].s[5] ){
-			    deamPos.push_back(i+1);
-			    seq[i] = 'T';
-			    deaminated=true;
+		    //5p
+		    for(int i=0;
+			i<int(seq.size());
+			i++){
+			if(seq[i] == 'C'){
+			    if( randomProb() < sub5p[i].s[5] ){
+				deamPos.push_back(i+1);
+				seq[i] = 'T';
+				deaminated=true;
+			    }
 			}
 		    }
-		}
 
-		//3p
-		for(int i=0;
-		    i<int(seq.size());
-		    i++){
-		    if(seq[i] == 'G'){
-			if( randomProb() < sub3p[ int(seq.size())-i-1 ].s[6] ){			
-			    deamPos.push_back( -(int(seq.size())-i));
-			    seq[i] = 'A';
-			    deaminated=true;
+		    //3p
+		    for(int i=0;
+			i<int(seq.size());
+			i++){
+			if(seq[i] == 'G'){
+			    if( randomProb() < sub3p[ int(seq.size())-i-1 ].s[6] ){			
+				deamPos.push_back( -(int(seq.size())-i));
+				seq[i] = 'A';
+				deaminated=true;
+			    }
+
 			}
-
 		    }
-		}
 
+		}
 	    }
 
 	    if(verbose){

@@ -56,6 +56,16 @@ typedef struct faidx1_t{
     uint64_t offset;
 }faidx1_t,*FaidxPtr;
 
+inline double maxSubrates(const subrates & sub){     
+    double maxsub = sub.s[0];
+    if(sub.s[1]>maxsub) 
+	maxsub = sub.s[1];
+    if(sub.s[2]>maxsub) 
+	maxsub = sub.s[2];
+    if(sub.s[3]>maxsub) 
+	maxsub = sub.s[3];
+    return maxsub;
+}
 
 uint64_t  randGenomicCoord(const uint64_t & genomeLength){     
 
@@ -273,8 +283,8 @@ int main (int argc, char *argv[]) {
 	
 	"\n"+
 	"\tFragment size: \n"+
-	"\t\t"+"-m\t"+"[length]" +"\t\t\t"+"Minimum fragments length  (default: "+stringify(minimumFragSize)+")"+"\n"+
-	"\t\t"+"-M\t"+"[length]" +"\t\t\t"+"Maximum fragments length  (default: "+stringify(maximumFragSize)+")"+"\n"+
+	"\t\t"+"-m\t"+"[length]" +"\t\t\t"+"Minimum fragments length < (default: "+stringify(minimumFragSize)+")"+"\n"+
+	"\t\t"+"-M\t"+"[length]" +"\t\t\t"+"Maximum fragments length > (default: "+stringify(maximumFragSize)+")"+"\n"+
 	"\n"+
 	"\tFragment size distribution: specify either one of the 3 possible options\n"+
 	"\t\t"+"-l\t"+"[length]" +"\t\t\t"+"Generate fragments of fixed length  (default: "+stringify(sizeFragments)+")"+"\n"+
@@ -716,8 +726,28 @@ int main (int argc, char *argv[]) {
     // string bamfiletopen = string(argv[argc-1]);//bam file
     string fastaFile    = string(argv[argc-1]);//fasta file
     
+    double maxProbP = 1.0;
+    double maxProbM = 1.0;
+
+
+    for(int i=0;i<2*distFromEnd;i++){
+	maxProbP=maxProbP*maxSubrates(sub5pPlus[i] );
+    }
+    for(int i=0;i<2*distFromEnd;i++){
+	maxProbM=maxProbM*maxSubrates(sub5pMinus[i]);	
+    }
+
+    for(int i=0;i<2*distFromEnd;i++){
+	maxProbP=maxProbP*maxSubrates(sub3pPlus[i] );		
+    }
+    
+    for(int i=0;i<2*distFromEnd;i++){
+	maxProbM=maxProbM*maxSubrates(sub3pMinus[i]);	
+    }
+
 
 #ifdef DEBUG    
+    cerr<<"Maxprob.+\t"<<maxProbM<<"\tMaxprob.-\t"<<maxProbP<<endl;
     cerr<<"----------------"<<endl;
     cerr<<"5p + misincorporation"<<endl;
     for(int i=0;i<2*distFromEnd;i++){
@@ -836,8 +866,15 @@ int main (int argc, char *argv[]) {
 	    else
 		if(specifiedScale ){ length=int(distribution(generator));                              	}
 	
+	if(length<distFromEnd)//if the length of the fragment is lesser than the distance from end, creating a slight bias against short fragments but acceptable one if distFromEnd is small enough
+	    continue;
+	if(length<minimumFragSize)
+	    continue;
 
+	if(length>maximumFragSize)
+	    continue;
 
+	
 	uint64_t idx;//         = randomInt(distFromEnd,int(chrall.size())-length-distFromEnd);
 	uint64_t coord;
 	bool found=false;
@@ -853,7 +890,9 @@ int main (int argc, char *argv[]) {
 
 	    for(unsigned int i=0;i<chrFound.size();i++){ 
 		    
-		if( (chrFound[i].startIndexChr+distFromEnd) <= coord && coord <= (chrFound[i].endIndexChr-length-distFromEnd+1)){
+		if( (chrFound[i].startIndexChr+distFromEnd) <= coord 
+                                                	       && 
+		                                               coord <= (chrFound[i].endIndexChr-length-distFromEnd+1)){
 		    found=true;
 		    idx = coord-chrFound[i].startIndexChr;
 		    faidx1_t faidxForName=genome->name2index[ chrFound[i].name ];
@@ -894,12 +933,14 @@ int main (int argc, char *argv[]) {
 	    continue;
 	// cout<<length<<endl;
 	// cout<<distFromEnd<<endl;
-	//cerr<<"t:"<<temp<<endl;
-	
+#ifdef DEBUG    	    
+	cerr<<"t:"<<temp<<"#\tl="<<length<<endl;	
+#endif
 
 	if(!plusStrand){
-	    //cout<<"-"<<endl;	    
-
+#ifdef DEBUG    	    
+	    cerr<<"-"<<endl;	    
+#endif
 	    temp    = reverseComplement(temp);
 	    preFrag = temp.substr(                 0 , distFromEnd);
 	    frag    = temp.substr(       distFromEnd ,      length);
@@ -907,14 +948,19 @@ int main (int argc, char *argv[]) {
 
 	    deflineToPrint = deflineToPrint+"-:"+stringify(idx)+":"+stringify(idx+length)+":"+stringify(length);
 	}else{
-
-	    //cout<<"+"<<endl;
+#ifdef DEBUG    
+	    cerr<<"+"<<endl;
+#endif
 	    preFrag = temp.substr(                 0 , distFromEnd);
 	    frag    = temp.substr(       distFromEnd ,      length);
 	    posFrag = temp.substr(length+distFromEnd , distFromEnd);
 
 	    deflineToPrint = deflineToPrint+"+:"+stringify(idx)+":"+stringify(idx+length)+":"+stringify(length);
 	}
+
+#ifdef DEBUG    	    
+	cerr<<"t:"<<temp<<"#"<<endl;	
+#endif
 
 	if(tagb){
 	    deflineToPrint=deflineToPrint+tag;	    
@@ -978,6 +1024,8 @@ int main (int argc, char *argv[]) {
 		    probAcc *= sub3pPlus[i+distFromEnd].s[baseResolved2int( posFrag[i]                   )];
 		}
 
+		probAcc = probAcc/maxProbP;
+
 #ifdef DEBUG    
 		cerr<<"+ strand comp file p[acc]="<<probAcc<<"\t"<<distFromEnd<<endl;
 #endif
@@ -1040,6 +1088,8 @@ int main (int argc, char *argv[]) {
 		for(int i=0;i<distFromEnd;i++){
 		    probAcc *= sub3pMinus[i+distFromEnd].s[baseResolved2int( posFrag[i]                   )];
 		}
+
+		probAcc = probAcc/maxProbM;
 
 #ifdef DEBUG    
 		cerr<<"- strand comp file p[acc]="<<probAcc<<"\t"<<distFromEnd<<endl;
