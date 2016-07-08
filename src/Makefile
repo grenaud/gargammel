@@ -7,7 +7,7 @@ CXXFLAGS =  -std=c++0x -Wall -lm -O3 -lz -I${LIBGAB} -I${LIBGAB}/gzstream/ -I${B
 LDFLAGS  = ${LIBGAB}/FastQObj.o  ${LIBGAB}/FastQParser.o ${LIBGAB}/PutProgramInHeader.o ${BAMTOOLS}/lib/libbamtools.a  ${LIBGAB}/utils.o ${LIBGAB}/gzstream/libgzstream.a -lm -lz
 
 
-all: fragSim deamSim adptSim
+all: fragSim deamSim adptSim fasta2fastas
 
 adptSim.o:	adptSim.cpp
 	${CXX} ${CXXFLAGS} adptSim.cpp
@@ -27,6 +27,12 @@ deamSim.o:	deamSim.cpp
 deamSim:	deamSim.o 
 	${CXX} -o $@ $^ $(LDLIBS) $(LDFLAGS)
 
+fasta2fastas.o:	fasta2fastas.cpp
+	${CXX} ${CXXFLAGS} fasta2fastas.cpp
+
+fasta2fastas:	fasta2fastas.o 
+	${CXX} -o $@ $^ $(LDLIBS) $(LDFLAGS)
+
 clean :
-	rm -f fragSim.o fragSim deamSim.o deamSim adptSim.o adptSim
+	rm -f fragSim.o fragSim deamSim.o deamSim adptSim.o adptSim fasta2fastas.o fasta2fastas
 

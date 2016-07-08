@@ -171,6 +171,7 @@ my $maxsize=1000;
 my $adapterF="AGATCGGAAGAGCACACGTCTGAACTCCAGTCACCGATTCGATCTCGTATGCCGTCTTCTGCTTG";
 my $adapterR="AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTAGATCTCGGTGGTCGCCGTATCATTT";
 my $readlength=75;
+my $distmis=1;
 
 sub usage
 {
@@ -208,6 +209,7 @@ sub usage
   " \t\t--misince\t[file]\t\tBase misincorporation for the endogenous fragments (default none)\n".
   " \t\t--misincc\t[file]\t\tBase misincorporation for the contaminant fragments (default none)\n".
   " \t\t--misincb\t[file]\t\tBase misincorporation for the bacterial fragments (default none)\n".
+  " \t\t--distmis\t[dist]\t\tDistance to consider for base misincorporation (default ".$distmis.")\n".
 
   " \t\t\t\t\t\tthis file is obtained from mapDamage\n".
   "\n".
@@ -247,11 +249,11 @@ sub usage
 	                                \tuse the shorthand in the left column:
                                                                         (single-end, paired-end)
 \t\t\t\t\t\t   GA2  - GenomeAnalyzer II (  50bp,  75bp)
-\t\t\t\t\t\t   HS20 - HiSeq 2000        (   N/A, 100bp)
+\t\t\t\t\t\t   HS20 - HiSeq 2000        ( 100bp,   N/A)
 \t\t\t\t\t\t   HS25 - HiSeq 2500        ( 125bp, 150bp) (Default)
-\t\t\t\t\t\t   HSXt - HiSeqX TruSeq     (   N/A, 150bp)
-\t\t\t\t\t\t   MSv1 - MiSeq v1          (   N/A, 250bp)
-\t\t\t\t\t\t   MSv3 - MiSeq v3          (   N/A, 250bp)".
+\t\t\t\t\t\t   HSXt - HiSeqX TruSeq     ( 150bp,   N/A)
+\t\t\t\t\t\t   MSv1 - MiSeq v1          ( 250bp,   N/A)
+\t\t\t\t\t\t   MSv3 - MiSeq v3          ( 250bp,   N/A)".
 
 	  "\n\n".
   "\n\n".
@@ -288,7 +290,7 @@ my $sa;
 my $rl;
 
 usage() if ( @ARGV < 1 or
-	     ! GetOptions('help|?' => \$help, 'mock' => \$mock, 'se' => \$se, 'ss' => \$ss, 'misince=s' => \$misince,'misincb=s' => \$misincb,'misincc=s' => \$misincc, 'comp=s' => \$comp, 'matfile=s' => \$matfile, 'briggs=s' => \$briggs, 'o=s' => \$outputprefix, 'n=i' => \$numberOfFragments,'l=i' => \$fraglength,'s=s' => \$filefragsize, 'loc=s' => \$loc, 'fa=s' => \$fa, 'sa=s' => \$sa, 'rl=s' => \$rl, 'scale=s' => \$scale, 'c=f' => \$coverage, 'minsize=i' => \$minsize,'maxsize=i' => \$maxsize)
+	     ! GetOptions('help|?' => \$help, 'mock' => \$mock, 'se' => \$se, 'ss=s' => \$ss, 'distmis=i' => \$distmis, 'misince=s' => \$misince,'misincb=s' => \$misincb,'misincc=s' => \$misincc, 'comp=s' => \$comp, 'matfile=s' => \$matfile, 'briggs=s' => \$briggs, 'o=s' => \$outputprefix, 'n=i' => \$numberOfFragments,'l=i' => \$fraglength,'s=s' => \$filefragsize, 'loc=s' => \$loc, 'fa=s' => \$fa, 'sa=s' => \$sa, 'rl=s' => \$rl, 'scale=s' => \$scale, 'c=f' => \$coverage, 'minsize=i' => \$minsize,'maxsize=i' => \$maxsize)
           or defined $help );
 
 if( !(defined $ss) ){
@@ -366,7 +368,7 @@ if ($ss eq "GA2") {		#- GenomeAnalyzer II (50bp, 75bp)
 	      die "The platform does not provide paired-end sequencing\n";
 	    }
 	  } else {
-	    die "Invalid platform ".$ss."\n";
+	    die "Invalid sequencing platform ".$ss."\n";
 	  }
 	}#not msv1
       }#not HSXt
@@ -908,8 +910,8 @@ for(my $i=0;$i<=$#arrayofFilescont;$i++){
 }
 
 print STDERR "--------------------------------------------\n";
-print STDERR   "".$numberOfFragmentsB."\t(".sprintf("% .2f",100*$numberOfFragmentsB/$numberOfFragments)."%) "."\tbacterial fragments\n";
-  "--------------------------------------------\n";
+print STDERR "".$numberOfFragmentsB."\t(".sprintf("% .2f",100*$numberOfFragmentsB/$numberOfFragments)."%) "."\tbacterial fragments\n";
+print STDERR "--------------------------------------------\n";
 
 
 for(my $i=0;$i<=$#arrayofFilesbact;$i++){
@@ -935,7 +937,9 @@ if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
 
     if (defined $misince) {
       $cmd1 .= " --comp ".$misince." ";
+      $cmd1 .= " --dist ".$distmis." ";
     }
+
 
     if (defined $filefragsize) {
       $cmd1 .= " -s ".$filefragsize." ";
@@ -969,6 +973,7 @@ if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
 
     if (defined $misince) {
       $cmd1 .= " --comp ".$misince." ";
+      $cmd1 .= " --dist ".$distmis." ";
     }
 
     if (defined $filefragsize) {
@@ -998,6 +1003,7 @@ if ($#arrayofFilescont != -1 && $numberOfFragmentsC>0) {
 
     if (defined $misincc) {
       $cmd1 .= " --comp ".$misincc." ";
+      $cmd1 .= " --dist ".$distmis." ";
     }
 
     if (defined $filefragsize) {
