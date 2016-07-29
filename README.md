@@ -17,7 +17,7 @@ Questions/feature requests :
 Downloading:
 -------------------------------------------------------------------------------------
 Do a :
-   git clone --recursive  --depth 1 https://github.com/grenaud/gargammel.git
+    git clone --recursive  --depth 1 https://github.com/grenaud/gargammel.git
 
 
 Requirements:
