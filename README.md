@@ -10,6 +10,7 @@ various levels of bacterial contamination.
 
 Questions/feature requests :
 -------------------------------------------------------------------------------------
+
 	contact: Gabriel Renaud   
 	email:	 gabriel [dot] reno [ at sign ] gmail.com
 
@@ -17,6 +18,7 @@ Questions/feature requests :
 Downloading:
 -------------------------------------------------------------------------------------
 Do a :
+
     git clone --recursive  --depth 1 https://github.com/grenaud/gargammel.git
 
 
