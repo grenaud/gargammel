@@ -55,8 +55,20 @@ int main (int argc, char *argv[]) {
     double sBrgs = 0.0;
 
 
+    bool useBriggsss             =false;
+    double sBrgs5p = 0.0;
+    double sBrgs3p = 0.0;
+    double lBrgs5p = 0.0;
+    double lBrgs3p = 0.0;
+
+
+
+
     default_random_engine generator;
     geometric_distribution<int> overhang;
+
+    geometric_distribution<int> overhanggeo5p;
+    geometric_distribution<int> overhanggeo3p;
 
     vector<substitutionRates> sub5p;
     vector<substitutionRates> sub3p;
@@ -99,11 +111,30 @@ int main (int argc, char *argv[]) {
                               "\t\t"+"                               " +"\t\t"+"Double strand will have and C->T at the 5p end and G->A damage at the 3p end"+"\n"+
 
 			      "\t\t"+"-damage     [v,l,d,s]" +"\t\t\t"+"For the Briggs et al. 2007 model"+"\n"+
-                              "\t\t"+"                               " +"\t\t"+"The parameters must be comma-separated e.g.: -briggs 0.03,0.4,0.01,0.7"+"\n"+
+                              "\t\t"+"                               " +"\t\t"+"The parameters must be comma-separated e.g.: -damage 0.03,0.4,0.01,0.7"+"\n"+
                               "\t\t"+"                               " +"\t\t"+"\tv: nick frequency"+"\n"+
                               "\t\t"+"                               " +"\t\t"+"\tl: length of overhanging ends (geometric parameter)"+"\n"+
                               "\t\t"+"                               " +"\t\t"+"\td: prob. of deamination of Cs in double-stranded parts"+"\n"+
                               "\t\t"+"                               " +"\t\t"+"\ts: prob. of deamination of Cs in single-stranded parts"+"\n"+
+
+			      // "\t\t"+"-damagess     [d,s5,s3,l5,l3]" +"\t\t\t"+"Single-strand model"+"\n"+
+                              // "\t\t"+"                               " +"\t\t"+"The parameters must be comma-separated e.g.: -damagess 0.01,0.5,0.7,0.6,0.7"+"\n"+
+                              // "\t\t"+"                               " +"\t\t"+"\td: prob. of deamination of Cs in double-stranded parts"+"\n"+
+                              // "\t\t"+"                               " +"\t\t"+"\ts5: prob. of deamination of Cs in single-stranded parts at the 5p end"+"\n"+
+                              // "\t\t"+"                               " +"\t\t"+"\ts3: prob. of deamination of Cs in single-stranded parts at the 3p end"+"\n"+
+                              // "\t\t"+"                               " +"\t\t"+"\tl5: length of overhanging ends at the 5p end (geometric parameter)"+"\n"+
+                              // "\t\t"+"                               " +"\t\t"+"\tl3: length of overhanging ends at the 3p end (geometric parameter)"+"\n"+
+
+                              // "\t\t"+"                               " +"\t\t"+"\tv: nick frequency"+"\n"+
+
+                              // "\t\t"+"                               " +"\t\t"+"\td: prob. of deamination of Cs in double-stranded parts"+"\n"+
+
+	    // dBrgs   = destringify<double>(temps[0]);
+	    // sBrgs5p = destringify<double>(temps[1]);
+	    // sBrgs3p = destringify<double>(temps[2]);
+	    // lBrgs5p = destringify<double>(temps[3]);
+	    // lBrgs3p = destringify<double>(temps[4]);
+
 
                               "");
                               
@@ -173,6 +204,40 @@ int main (int argc, char *argv[]) {
 	    continue;
 	}
 
+
+
+	if(string(argv[i]) == "-damagess" ){
+	    string parametersB          = string(argv[i+1]);
+	    useBriggsss                   = true;
+	    vector<string> temps=allTokens(parametersB,',');
+	    if(temps.size()!=5){
+		cerr << "Specify 4 comma-separated values for the Briggs model, you entered:"<<parametersB<<endl;
+		return 1;
+	    }
+	    //vBrgs=destringify<double>(temps[0]);
+
+	    dBrgs   = destringify<double>(temps[0]);
+	    sBrgs5p = destringify<double>(temps[1]);
+	    sBrgs3p = destringify<double>(temps[2]);
+	    lBrgs5p = destringify<double>(temps[3]);
+	    lBrgs3p = destringify<double>(temps[4]);
+	    
+	    overhanggeo5p = geometric_distribution<int>(lBrgs5p);
+	    overhanggeo3p = geometric_distribution<int>(lBrgs3p);
+
+	    //if( (vBrgs<0) || (vBrgs>1) ){ cerr << "Nick frequency must be between 0 and 1, entered:"<<vBrgs<<endl; return 1; }
+	    if( (lBrgs5p<0) || (lBrgs5p>1) ){ cerr << "Geometric parameter for overhang must be between 0 and 1, entered:"<<lBrgs5p<<endl; return 1; }
+	    if( (lBrgs3p<0) || (lBrgs3p>1) ){ cerr << "Geometric parameter for overhang must be between 0 and 1, entered:"<<lBrgs3p<<endl; return 1; }
+
+	    if( (dBrgs<0) || (dBrgs>1) ){ cerr << "double-strand deamination prob. must be between 0 and 1, entered:"<<dBrgs<<endl; return 1; }
+	    if( (sBrgs5p<0) || (sBrgs5p>1) ){ cerr << "single-strand deamination prob. must be between 0 and 1, entered:"<<sBrgs5p<<endl; return 1; }
+	    if( (sBrgs3p<0) || (sBrgs3p>1) ){ cerr << "single-strand deamination prob. must be between 0 and 1, entered:"<<sBrgs3p<<endl; return 1; }
+
+	    i++;
+
+	    continue;
+	}
+
 	if(string(argv[i]) == "-name" ){
 	    putDeamInName = true;
 	    continue;
@@ -211,7 +276,18 @@ int main (int argc, char *argv[]) {
         return 1;
     }
 
+    if(useBriggsss && matrixSpecified){
+        cerr<<"Error: cannot specify both a file and Briggs parameter model"<<endl;
+        return 1;
+    }
+
+    if(useBriggs && useBriggsss){
+        cerr<<"Error: cannot specify both a file and Briggs parameter model"<<endl;
+        return 1;
+    }
+
     if(!useBriggs          && 
+       !useBriggsss        && 
        !matrixSpecified    && 
        !matrixFileSpecified){
     	cerr << "Please specify the matrix to use or use the Briggs parameter model"<<endl;
@@ -231,7 +307,7 @@ int main (int argc, char *argv[]) {
     // 	return 1;
     // }
 
-    if(!useBriggs){    
+    if(!useBriggs && !useBriggsss){    
 	string deam5File;
 	string deam3File;
 	
@@ -462,136 +538,128 @@ int main (int argc, char *argv[]) {
 	/////////////////////////
 	//  ADDING DEAMINATION //
 	/////////////////////////
-	if(useBriggs){
-	    int overhang5p=overhang(generator);
-	    int overhang3p=overhang(generator);
+
+	if(useBriggsss){
 	    
-	    bool placedNick = false;
-	    int indexNick   = -1;
+	    int overhang5p=overhanggeo5p(generator);
+	    int overhang3p=overhanggeo3p(generator);
+
 	    if( (overhang5p+overhang3p)>=int(seq.size())){//all single strand
 
 		//just apply sBrgs over the entire fragment
 		for(int i=0;i<int(seq.size());i++){
-		    if(seq[i] == 'C'){
-			if( randomProb() < sBrgs ){
-			    deamPos.push_back(i+1);
-			    seq[i] = 'T';
-			    deaminated=true;
-			}
-		    }
-		}
 
-	    }else{
-	
-		//Placing a nick (maybe)
-		for(int i=0;i<int(seq.size());i++){
-#ifdef DEBUG
-		    cout<<i<<"\t"<<placedNick<<endl;
-#endif
-		    if(!placedNick)
-			if(randomProb() < vBrgs){ //nick is present
-			    placedNick=true;
-			    indexNick =i;			
-			}
-
-
-		    if(placedNick){
-			
-			//in 5p overhang
-			if((i+1)<=overhang5p){
-#ifdef DEBUG
-			    cout<<"5pn"<<endl;
-#endif
+		    //both in 5p and 3p overhang, pick closest
+		    if( ((i+1)<=overhang5p) && ((int(seq.size())-i)<=overhang3p) ){
+			if(i<int(double(seq.size())*0.5)){
 			    if(seq[i] == 'C'){
-				if( randomProb() < sBrgs ){
+				if( randomProb() < sBrgs5p ){
 				    deamPos.push_back(i+1);
 				    seq[i] = 'T';
 				    deaminated=true;
 				}
 			    }
 			}else{
-
-			    //in 3p overhang
-			    if((int(seq.size())-i)<=overhang3p){
-#ifdef DEBUG
-				cout<<"3pn"<<endl;
-#endif
-				if(seq[i] == 'G'){
-				    if( randomProb() < sBrgs ){
-					deamPos.push_back(i+1);
-					seq[i] = 'A';
-					deaminated=true;
-				    }
-				}
-			    }else{ //in double strand
-#ifdef DEBUG
-				cout<<"ddn"<<endl;
-#endif						    
-				if(seq[i] == 'G'){
-				    if( randomProb() < dBrgs ){
-					deamPos.push_back(i+1);
-					seq[i] = 'A';
-					deaminated=true;
-				    }
-				}
-			    }
-			}
-
-
-		    }else{//No nick
-			
-
-			//in 5p overhang
-			if((i+1)<=overhang5p){
-#ifdef DEBUG
-			    cout<<"5p"<<endl;
-#endif
 			    if(seq[i] == 'C'){
-				if( randomProb() < sBrgs ){
+				if( randomProb() < sBrgs3p ){
 				    deamPos.push_back(i+1);
 				    seq[i] = 'T';
 				    deaminated=true;
 				}
 			    }
+			}
+			
+		    }else{//just in one of them
+			//just in 3p overhand
+			if( !((i+1)<=overhang5p) &&  ((int(seq.size())-i)<=overhang3p) ){
+			    if(seq[i] == 'C'){
+				if( randomProb() < sBrgs3p ){
+				    deamPos.push_back(i+1);
+				    seq[i] = 'T';
+				    deaminated=true;
+				}
+			    }
+
 			}else{
 
-			    //in 3p overhang
-			    if((int(seq.size())-i)<=overhang3p){
-#ifdef DEBUG
-				cout<<"3p"<<endl;
-#endif
-				if(seq[i] == 'G'){
-				    if( randomProb() < sBrgs ){
-					deamPos.push_back(i+1);
-					seq[i] = 'A';
-					deaminated=true;
-				    }
-				}
-			    }else{ //in double strand
-#ifdef DEBUG
-				cout<<"dd"<<endl;
-#endif
+			    //just 5' overhang
+			    if(  ((i+1)<=overhang5p) && !((int(seq.size())-i)<=overhang3p) ){
+
 				if(seq[i] == 'C'){
-				    if( randomProb() < dBrgs ){
+				    if( randomProb() < sBrgs5p ){
 					deamPos.push_back(i+1);
 					seq[i] = 'T';
 					deaminated=true;
 				    }
 				}
+
+			    }else{
+				
+				cerr<<"Internal error in full overhang, contact developers "<<al.Name<<endl; 
+				return 1; 
+
+			    }
+			}		       
+		    }//closes just in one of them
+		}//end for each base
+		
+
+	    }else{
+	
+		for(int i=0;i<int(seq.size());i++){
+
+
+
+			
+
+		    //in 5p overhang
+		    if((i+1)<=overhang5p){
+#ifdef DEBUG
+			cout<<"5p"<<endl;
+#endif
+			if(seq[i] == 'C'){
+			    if( randomProb() < sBrgs5p ){
+				deamPos.push_back(i+1);
+				seq[i] = 'T';
+				deaminated=true;
 			    }
 			}
+		    }else{
+
+			//in 3p overhang
+			if((int(seq.size())-i)<=overhang3p){
+#ifdef DEBUG
+			    cout<<"3p"<<endl;
+#endif
+			    if(seq[i] == 'C'){
+				if( randomProb() < sBrgs3p ){
+				    deamPos.push_back(i+1);
+				    seq[i] = 'T';
+				    deaminated=true;
+				}
+			    }
+			}else{ //in double strand
+#ifdef DEBUG
+			    cout<<"dd"<<endl;
+#endif
+			    if(seq[i] == 'C'){
+				if( randomProb() < dBrgs ){
+				    deamPos.push_back(i+1);
+				    seq[i] = 'T';
+				    deaminated=true;
+				}
+			    }
+			}
+		    }
 
 
 		
-		    }//end no nick
 
 		}//end loop each base
 
 		if(verbose){
 		    cerr<<"Read seq:"<<def<<" l="<<seq.size()<<" overhangs:"<<overhang5p<<"--"<<overhang3p;
-		    if(placedNick)
-			cerr<<" nick: "<<indexNick;
-		    
+		    		    
 		    if(deaminated)
 			cerr<<" added deamination "<<vectorToString(deamPos)<<endl;
 		    else
@@ -600,224 +668,367 @@ int main (int argc, char *argv[]) {
 	
 	    }//overhangs do not meet
 
+	    
+
 	}else{
 
-	    if(matrixFileSpecified){
-		
-		 for(int i=0;i<int(seq.size());i++){
-		     if(!isResolvedDNA(seq[i]))
-			 continue;
-		     double sumProb [5];
-		     double _sumProb[5];
+	    if(useBriggs){
+		int overhang5p=overhang(generator);
+		int overhang3p=overhang(generator);
+	    
+		bool placedNick = false;
+		int indexNick   = -1;
+		if( (overhang5p+overhang3p)>=int(seq.size())){//all single strand
 
-		     sumProb[0]  = 0.0;
-		     _sumProb[0] = 0.0;
+		    //just apply sBrgs over the entire fragment
+		    for(int i=0;i<int(seq.size());i++){
+			if(seq[i] == 'C'){
+			    if( randomProb() < sBrgs ){
+				deamPos.push_back(i+1);
+				seq[i] = 'T';
+				deaminated=true;
+			    }
+			}
+		    }
+
+		}else{
+	
+		    //Placing a nick (maybe)
+		    for(int i=0;i<int(seq.size());i++){
+#ifdef DEBUG
+			cout<<i<<"\t"<<placedNick<<endl;
+#endif
+			if(!placedNick)
+			    if(randomProb() < vBrgs){ //nick is present
+				placedNick=true;
+				indexNick =i;			
+			    }
+
+
+			if(placedNick){
+			
+			    //in 5p overhang
+			    if((i+1)<=overhang5p){
+#ifdef DEBUG
+				cout<<"5pn"<<endl;
+#endif
+				if(seq[i] == 'C'){
+				    if( randomProb() < sBrgs ){
+					deamPos.push_back(i+1);
+					seq[i] = 'T';
+					deaminated=true;
+				    }
+				}
+			    }else{
+
+				//in 3p overhang
+				if((int(seq.size())-i)<=overhang3p){
+#ifdef DEBUG
+				    cout<<"3pn"<<endl;
+#endif
+				    if(seq[i] == 'G'){
+					if( randomProb() < sBrgs ){
+					    deamPos.push_back(i+1);
+					    seq[i] = 'A';
+					    deaminated=true;
+					}
+				    }
+				}else{ //in double strand
+#ifdef DEBUG
+				    cout<<"ddn"<<endl;
+#endif						    
+				    if(seq[i] == 'G'){
+					if( randomProb() < dBrgs ){
+					    deamPos.push_back(i+1);
+					    seq[i] = 'A';
+					    deaminated=true;
+					}
+				    }
+				}
+			    }
+
+
+			}else{//No nick
+			
+
+			    //in 5p overhang
+			    if((i+1)<=overhang5p){
+#ifdef DEBUG
+				cout<<"5p"<<endl;
+#endif
+				if(seq[i] == 'C'){
+				    if( randomProb() < sBrgs ){
+					deamPos.push_back(i+1);
+					seq[i] = 'T';
+					deaminated=true;
+				    }
+				}
+			    }else{
+
+				//in 3p overhang
+				if((int(seq.size())-i)<=overhang3p){
+#ifdef DEBUG
+				    cout<<"3p"<<endl;
+#endif
+				    if(seq[i] == 'G'){
+					if( randomProb() < sBrgs ){
+					    deamPos.push_back(i+1);
+					    seq[i] = 'A';
+					    deaminated=true;
+					}
+				    }
+				}else{ //in double strand
+#ifdef DEBUG
+				    cout<<"dd"<<endl;
+#endif
+				    if(seq[i] == 'C'){
+					if( randomProb() < dBrgs ){
+					    deamPos.push_back(i+1);
+					    seq[i] = 'T';
+					    deaminated=true;
+					}
+				    }
+				}
+			    }
+
+
+		
+			}//end no nick
+
+		    }//end loop each base
+
+		    if(verbose){
+			cerr<<"Read seq:"<<def<<" l="<<seq.size()<<" overhangs:"<<overhang5p<<"--"<<overhang3p;
+			if(placedNick)
+			    cerr<<" nick: "<<indexNick;
+		    
+			if(deaminated)
+			    cerr<<" added deamination "<<vectorToString(deamPos)<<endl;
+			else
+			    cerr<<" no deamination "<<endl;
+		    }
+	
+		}//overhangs do not meet
+
+	    }else{//no briggs
+
+		if(matrixFileSpecified){
+		
+		    for(int i=0;i<int(seq.size());i++){
+			if(!isResolvedDNA(seq[i]))
+			    continue;
+			double sumProb [5];
+			double _sumProb[5];
+
+			sumProb[0]  = 0.0;
+			_sumProb[0] = 0.0;
 		     
 
-		     //5p
-		     if(i<(int(seq.size())/2)){
-			 int b = baseResolved2int(seq[i]);
-			 double sum=0.0;
-			 for(int a=0;a<4;a++){
-			     if(a==b)
-				 continue;
-			     int idx;
-			     if(a<b)
-				 idx = b*3+a;
-			     else
-				 idx = b*3+(a-1);			     
-			     sum += sub5p[i].s[idx];
-			     _sumProb[a+1] = sub5p[i].s[idx];
-			 }
-			 _sumProb[b+1] = 1.0 - sum;
+			//5p
+			if(i<(int(seq.size())/2)){
+			    int b = baseResolved2int(seq[i]);
+			    double sum=0.0;
+			    for(int a=0;a<4;a++){
+				if(a==b)
+				    continue;
+				int idx;
+				if(a<b)
+				    idx = b*3+a;
+				else
+				    idx = b*3+(a-1);			     
+				sum += sub5p[i].s[idx];
+				_sumProb[a+1] = sub5p[i].s[idx];
+			    }
+			    _sumProb[b+1] = 1.0 - sum;
 
-			 double s=0;
-			 for(int a=0;a<5;a++){			     
-			     s += _sumProb[a];
-			     sumProb[a]  = s;
-			 }
+			    double s=0;
+			    for(int a=0;a<5;a++){			     
+				s += _sumProb[a];
+				sumProb[a]  = s;
+			    }
 
 #ifdef DEBUG
-			 for(int a=0;a<5;a++){
-			     cout<<"5p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<"XACGT"[a]<<"\t"<<_sumProb[a]<<endl;
-			 }
+			    for(int a=0;a<5;a++){
+				cout<<"5p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<"XACGT"[a]<<"\t"<<_sumProb[a]<<endl;
+			    }
 #endif
 			 
 
 			 
-			 double p = randomProb();
-			 //bool f=false;
-			 for(int a=0;a<4;a++){
-			     if( (sumProb[a]    <= p ) 
-				 &&
-				 (sumProb[a+1]  >= p ) ){				 
+			    double p = randomProb();
+			    //bool f=false;
+			    for(int a=0;a<4;a++){
+				if( (sumProb[a]    <= p ) 
+				    &&
+				    (sumProb[a+1]  >= p ) ){				 
 
-				 seq[i] = "ACGT"[a];
-				 //f=true;
-				 if(a!=b){
-				     deamPos.push_back(i+1);
-				     deaminated=true;
-				 }
+				    seq[i] = "ACGT"[a];
+				    //f=true;
+				    if(a!=b){
+					deamPos.push_back(i+1);
+					deaminated=true;
+				    }
 
-				 break;
-			     }
-			 }
+				    break;
+				}
+			    }
 
-			 // if(b==1 && 
-			 //    i==0){
-			 //     for(int a=0;a<5;a++){
-			 // 	 cout<<"test\t5p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<"XACGT"[a]<<"\t"<<sumProb[a]<<"\t"<<p<<"\t"<<vectorToString(deamPos)<<endl;
-			 //     }
-			 //     cout<<"deam\t5p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<seq[i]<<"\t"<<p<<"\t"<<vectorToString(deamPos)<<endl;			     
-			 // }
+			    // if(b==1 && 
+			    //    i==0){
+			    //     for(int a=0;a<5;a++){
+			    // 	 cout<<"test\t5p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<"XACGT"[a]<<"\t"<<sumProb[a]<<"\t"<<p<<"\t"<<vectorToString(deamPos)<<endl;
+			    //     }
+			    //     cout<<"deam\t5p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<seq[i]<<"\t"<<p<<"\t"<<vectorToString(deamPos)<<endl;			     
+			    // }
 
 
-			 // if(b==1){
-			 //     for(int a=0;a<5;a++){
-			 // 	 cout<<"5p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<"ACGT"[b]<<"\t"<<seq[i]<<endl;
-			 //     }
-			 // }
+			    // if(b==1){
+			    //     for(int a=0;a<5;a++){
+			    // 	 cout<<"5p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<"ACGT"[b]<<"\t"<<seq[i]<<endl;
+			    //     }
+			    // }
 			 			 
-		     }
-		     //3p
-		     else{
+			}
+			//3p
+			else{
 
-			 int b = baseResolved2int(seq[i]);
-			 double sum=0.0;
-			 for(int a=0;a<4;a++){
-			     if(a==b)
-				 continue;
-			     int idx;
-			     if(a<b)
-				 idx = b*3+a;
-			     else
-				 idx = b*3+(a-1);			     
-			     sum += sub3p[ int(seq.size())-i-1 ].s[idx];
-			     _sumProb[a+1] = sub3p[ int(seq.size())-i-1 ].s[idx];
-			 }
-			 _sumProb[b+1] = 1.0 - sum;
+			    int b = baseResolved2int(seq[i]);
+			    double sum=0.0;
+			    for(int a=0;a<4;a++){
+				if(a==b)
+				    continue;
+				int idx;
+				if(a<b)
+				    idx = b*3+a;
+				else
+				    idx = b*3+(a-1);			     
+				sum += sub3p[ int(seq.size())-i-1 ].s[idx];
+				_sumProb[a+1] = sub3p[ int(seq.size())-i-1 ].s[idx];
+			    }
+			    _sumProb[b+1] = 1.0 - sum;
 
 
-			 double s=0;
-			 for(int a=0;a<5;a++){			     
-			     s += _sumProb[a];
-			     sumProb[a]  = s;
-			 }
+			    double s=0;
+			    for(int a=0;a<5;a++){			     
+				s += _sumProb[a];
+				sumProb[a]  = s;
+			    }
 			 
 #ifdef DEBUG
-			 for(int a=0;a<5;a++){
-			     cout<<"3p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t3p\t"<<"XACGT"[a]<<"\t"<<sumProb[a]<<endl;
-			 }
+			    for(int a=0;a<5;a++){
+				cout<<"3p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t3p\t"<<"XACGT"[a]<<"\t"<<sumProb[a]<<endl;
+			    }
 #endif
 
 
 			 
-			 double p = randomProb();
-			 //bool f=false;
-			 for(int a=0;a<4;a++){
-			     if( (sumProb[a]    <= p ) 
-				 &&
-				 (sumProb[a+1]  >= p ) ){				 
-				 seq[i] = "ACGT"[a];
-				 if(a!=b){
-				     deamPos.push_back( -(int(seq.size())-i ) );
-				     deaminated=true;
-				 }
-				 //f=true;
-				 break;
-			     }
-			 }
+			    double p = randomProb();
+			    //bool f=false;
+			    for(int a=0;a<4;a++){
+				if( (sumProb[a]    <= p ) 
+				    &&
+				    (sumProb[a+1]  >= p ) ){				 
+				    seq[i] = "ACGT"[a];
+				    if(a!=b){
+					deamPos.push_back( -(int(seq.size())-i ) );
+					deaminated=true;
+				    }
+				    //f=true;
+				    break;
+				}
+			    }
 
-			 // if(b==1 && 
-			 //    i==(int(seq.size())-1) ){
+			    // if(b==1 && 
+			    //    i==(int(seq.size())-1) ){
 
-			 //     for(int a=0;a<5;a++){
-			 // 	 cout<<"test\t3p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<"XACGT"[a]<<"\t"<<sumProb[a]<<"\t"<<p<<"\t"<<vectorToString(deamPos)<<endl;
-			 //     }
+			    //     for(int a=0;a<5;a++){
+			    // 	 cout<<"test\t3p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<"XACGT"[a]<<"\t"<<sumProb[a]<<"\t"<<p<<"\t"<<vectorToString(deamPos)<<endl;
+			    //     }
 
-			 //     cout<<"deam\t3p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<seq[i]<<"\t"<<p<<"\t"<<vectorToString(deamPos)<<endl; 	     
-			 // }
+			    //     cout<<"deam\t3p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<seq[i]<<"\t"<<p<<"\t"<<vectorToString(deamPos)<<endl; 	     
+			    // }
 
 
-		     }
-		 }
+			}
+		    }
 
-	    }else{
+		}else{ //no matrix specified
 
-		//MATRIX FILE
-		if(singleDeam){ //Single strand will have C->T damage on both ends
+		    //MATRIX FILE
+		    if(singleDeam){ //Single strand will have C->T damage on both ends
 	    
-		    //5p
-		    for(int i=0;
-			i<int(seq.size());
-			i++){
-			if(seq[i] == 'C'){
-			    if( randomProb() < sub5p[i].s[5] ){
-				deamPos.push_back(i+1);
-				seq[i] = 'T';
-				deaminated=true;
+			//5p
+			for(int i=0;
+			    i<int(seq.size());
+			    i++){
+			    if(seq[i] == 'C'){
+				if( randomProb() < sub5p[i].s[5] ){
+				    deamPos.push_back(i+1);
+				    seq[i] = 'T';
+				    deaminated=true;
+				}
 			    }
 			}
-		    }
 
-		    //3p
-		    for(int i=0;
-			i<int(seq.size());
-			i++){
-			if(seq[i] == 'C'){
-			    if( randomProb() < sub3p[ int(seq.size())-i-1 ].s[5] ){		
-				deamPos.push_back( -(int(seq.size())-i));
-				seq[i] = 'T';
-				deaminated=true;
+			//3p
+			for(int i=0;
+			    i<int(seq.size());
+			    i++){
+			    if(seq[i] == 'C'){
+				if( randomProb() < sub3p[ int(seq.size())-i-1 ].s[5] ){		
+				    deamPos.push_back( -(int(seq.size())-i));
+				    seq[i] = 'T';
+				    deaminated=true;
+				}
 			    }
 			}
+
+
+
 		    }
 
+		    if(doubleDeam){ //Double strand will have and C->T at the 5p end and G->A damage at the 3p end
+	    
+			//5p
+			for(int i=0;
+			    i<int(seq.size());
+			    i++){
+			    if(seq[i] == 'C'){
+				if( randomProb() < sub5p[i].s[5] ){
+				    deamPos.push_back(i+1);
+				    seq[i] = 'T';
+				    deaminated=true;
+				}
+			    }
+			}
 
+			//3p
+			for(int i=0;
+			    i<int(seq.size());
+			    i++){
+			    if(seq[i] == 'G'){
+				if( randomProb() < sub3p[ int(seq.size())-i-1 ].s[6] ){			
+				    deamPos.push_back( -(int(seq.size())-i));
+				    seq[i] = 'A';
+				    deaminated=true;
+				}
 
+			    }
+			}
+
+		    }
+		}//closes else no matrix specified
+
+		if(verbose){
+		    cerr<<"Read seq:"<<def;
+		    if(deaminated)
+			cerr<<" added deamination "<<vectorToString(deamPos)<<endl;
+		    else
+			cerr<<" no deamination "<<endl;
 		}
 
-		if(doubleDeam){ //Double strand will have and C->T at the 5p end and G->A damage at the 3p end
-	    
-		    //5p
-		    for(int i=0;
-			i<int(seq.size());
-			i++){
-			if(seq[i] == 'C'){
-			    if( randomProb() < sub5p[i].s[5] ){
-				deamPos.push_back(i+1);
-				seq[i] = 'T';
-				deaminated=true;
-			    }
-			}
-		    }
-
-		    //3p
-		    for(int i=0;
-			i<int(seq.size());
-			i++){
-			if(seq[i] == 'G'){
-			    if( randomProb() < sub3p[ int(seq.size())-i-1 ].s[6] ){			
-				deamPos.push_back( -(int(seq.size())-i));
-				seq[i] = 'A';
-				deaminated=true;
-			    }
-
-			}
-		    }
-
-		}
-	    }
-
-	    if(verbose){
-		cerr<<"Read seq:"<<def;
-		if(deaminated)
-		    cerr<<" added deamination "<<vectorToString(deamPos)<<endl;
-		else
-		    cerr<<" no deamination "<<endl;
-	    }
-
-	}
+	    }//closes else no briggs
+	}//closes else no briggsss
 
 	if(outBAMb){
 	    al.QueryBases  = seq;

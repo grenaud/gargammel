@@ -1,0 +1,57 @@
+#!/bin/bash
+
+set -e 
+
+RUNPATH=$(pwd)
+#echo "1" $(pwd);
+
+#pushd `dirname $0` > /dev/null
+#SCRIPTPATH=`pwd -P`
+#CURRENTPATH=`pwd -P`
+SCRIPTPATH="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+#echo $DIR;
+#echo "2" $(pwd);
+#exit;
+#detect if ftp is up
+
+if [ $(curl -s --head  --request GET ftp://ftp.ncbi.nlm.nih.gov/ | grep "200 OK" > /dev/null) ]  ]
+then 
+    echo "ftp://ftp.ncbi.nlm.nih.gov/ is up " #> /dev/null
+else
+    echo "It seems that ftp://ftp.ncbi.nlm.nih.gov/ is down"
+    exit;
+fi;
+
+if [[ ! -f $1 ]]  ## check if file exists
+then
+      echo "The file 'all_taxa.tsv' with microbial abundances output from metaBIT, must be supplied"
+      exit 1
+fi
+
+echo "Created "$RUNPATH"/fasta directory"
+
+mkdir -p $RUNPATH"/fasta"
+
+taxa=$1;
+user="anonymous"
+email="anonymous@server.net"
+
+if [ "$#" -eq 2 ]; then
+    email=$2;
+fi
+
+echo "Using email: $email"
+echo "Downloading reference genomes"
+
+for i in `awk -F\| '{if($NF ~ /s__/ && $NF !~ /unclassified/) print $NF}' ${taxa} | sed -r 's/\s+/\t/g'  |sort -k2,2rg | python $SCRIPTPATH/src/select_random_speciesftp.py`; 
+do 
+    echo "Retrieving "$i;
+    wget --ftp-user=$user --ftp-password=$email -nv -P $RUNPATH"/"fasta $i;
+done
+
+#|  parallel 
+echo "Decompressing reference genomes"
+parallel gunzip {} ::: $RUNPATH"/"/fasta/*.gz
+echo "Indexing reference genomes"
+parallel samtools faidx {} ::: $RUNPATH"/"/fasta/*.fna
+echo "Data is downloaded, uncompressed, and indexed successfully"

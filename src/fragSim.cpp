@@ -10,6 +10,7 @@
 #include <gzstream.h>
 #include <inttypes.h>
 #include <stdio.h>
+#include <numeric>
 
 #include <random>
 #include <cstring>
@@ -82,6 +83,28 @@ uint64_t  randGenomicCoord(const uint64_t & genomeLength){
     }
 }
 
+
+template <typename T>
+T pdfNorm(T x, T m, T s){
+    static const T inv_sqrt_2pi = 0.3989422804014327;
+    T a = (x - m) / s;
+
+    return inv_sqrt_2pi / s * exp(-T(0.5) * a * a);
+}
+
+double meanNorm(const vector<double> & v){
+    double sumVector  = accumulate(v.begin(), v.end(), 0.0);
+    return (sumVector / double(v.size()));
+}
+
+
+double stdevNorm(const vector<double> & v,const double meanV){
+    vector<double> dTemp(v.size());
+    transform(v.begin(), v.end(), dTemp.begin(),bind2nd(minus<double>(), meanV));
+    double sumSq = inner_product(dTemp.begin(), dTemp.end(), dTemp.begin(), 0.0);
+    return (sqrt(sumSq / v.size()));
+
+}
 
 /**
  * wrapper for a mmap, a fileid and some faidx indexes
@@ -241,6 +264,10 @@ int main (int argc, char *argv[]) {
     bool  compFileSpecified   = false;
     string line;
     int    distFromEnd        = 1;
+    double gcBias             = 0;
+    bool   gcBiasB            = false;
+
+
     
     vector<subrates> sub5pPlus;
     vector<subrates> sub5pMinus;
@@ -256,7 +283,7 @@ int main (int argc, char *argv[]) {
     string outFastagz       ;
     bool   outFastagzb=false;
     string outBAM           ;
-    bool   outBAMb    =false;
+    bool   outBAMb            =false;
     bool     tagb             =false;
     string   tag              = "";
 
@@ -292,7 +319,8 @@ int main (int argc, char *argv[]) {
 	"\n\t\tLength options:\n"+                                
 	"\t\t\t"+"--loc\t"+"[file]"   +  "\t\t\t"+"Location for lognormal distribution (default none)"+"\n"+
 	"\t\t\t"+"--scale\t"+"[file]"   +"\t\t\t"+"Scale for lognormal distribution      (default none)"+"\n"+
-	
+	"\n\t\tGC bias options:\n"+
+	"\t\t"+"-gc\t"+"[gc bias]" +"\t\t\t"+"Generate fragments of fixed length  (default: "+stringify(gcBias)+")"+"\n"+	
 	
 	// "\n\tOutput options:\n"+  
 	// "\t\t"+"-seq  [fasta file]" +"\t\t"+"Output fasta file (default: stdout)"+"\n"+
@@ -386,6 +414,13 @@ int main (int argc, char *argv[]) {
 	    continue;
 	}
 
+	if(string(argv[i]) == "-gc" ){
+	    gcBias  = destringify<double>(argv[i+1]);
+	    i++;
+	    gcBiasB = true;
+	    continue;
+	}
+
 	if(string(argv[i]) == "-l" ){
 	    sizeFragments=destringify<int>(argv[i+1]);
 	    i++;
@@ -469,7 +504,9 @@ int main (int argc, char *argv[]) {
 	if (sizeFragfd.good()){
 
 	    while ( getline (sizeFragfd,line)){
-		sizeFragList.push_back( destringify<int>( line ) );
+		int t = destringify<int>( line );
+		if(t>=1)
+		    sizeFragList.push_back( t );
 	    }
 	    sizeFragfd.close();
 
@@ -775,6 +812,9 @@ int main (int argc, char *argv[]) {
 
     IndexedGenome* genome=new IndexedGenome(fastaFile.c_str());
     cerr<<"Mapped "<<fastaFile<<" into memory"<<endl;
+
+
+
     
     uint64_t genomeLength=0;
     vector<chrinfo> chrFound;
@@ -799,6 +839,91 @@ int main (int argc, char *argv[]) {
 #ifdef DEBUG    
     cerr<<"genomeLength "<<genomeLength<<endl;
 #endif
+
+    double theoMeanGC=0.4;
+    double theoStdvGC=0.1;
+    double maxNormGC = 1;
+
+    if(gcBiasB){
+	cerr<<"Computing average GC content"<<endl;
+
+
+	unsigned int f       = 0;
+
+	vector<double> gcVal;
+
+	while(f<1000000){
+	    int length      = 50;
+	    unsigned int gcCount = 0;
+	    unsigned int atCount = 0;
+	    if(length<distFromEnd)//if the length of the fragment is lesser than the distance from end, creating a slight bias against short fragments but acceptable one if distFromEnd is small enough
+		continue;
+
+	
+	    //	    uint64_t idx;//         = randomInt(distFromEnd,int(chrall.size())-length-distFromEnd);
+	    uint64_t coord;
+	    bool found=false;
+	    //string temp     = chrall.substr(idx-distFromEnd,length+2*distFromEnd);
+	    string temp="";
+
+	    while(!found){
+		coord =randGenomicCoord(genomeLength);
+	    
+
+		for(unsigned int i=0;i<chrFound.size();i++){     
+		    if( (chrFound[i].startIndexChr+distFromEnd) <= coord 
+			&& 
+			coord <= (chrFound[i].endIndexChr-length-distFromEnd+1)){
+			found=true;
+			//idx = coord-chrFound[i].startIndexChr;
+			faidx1_t faidxForName=genome->name2index[ chrFound[i].name ];			
+			temp=genome->fetchSeq(&faidxForName,coord-chrFound[i].startIndexChr-distFromEnd, length+2*distFromEnd);			
+			break;
+		    }
+		}
+
+		if(found){		
+		    break;
+		}
+	    }
+
+	    bool plusStrand;
+	    if(noRev){
+		plusStrand = true;
+	    }else{
+		plusStrand = randomBool();
+	    }
+
+	    if(!isResolvedDNAstring(temp))
+		continue;
+	    
+	    if(!plusStrand){
+		temp    = reverseComplement(temp);
+	    }else{	   
+	    }
+	    
+	    for(unsigned int i=0;i<temp.size();i++){
+		//cout<<temp[i]<<endl;
+		if(isResolvedDNA(temp[i])){		    
+		    if(temp[i] == 'G' ||
+		       temp[i] == 'C' ){
+			gcCount++;
+		    }else{
+			atCount++;
+		    }
+		}	    
+	    }
+	    //cout<<(double(gcCount)/double(gcCount+atCount))<<endl;
+	    gcVal.push_back( double(gcCount)/double(gcCount+atCount) );
+	    f++;	
+	}
+
+	theoMeanGC  = meanNorm( gcVal                            );
+	theoStdvGC  = stdevNorm(gcVal,      theoMeanGC           );
+	maxNormGC   = pdfNorm(  theoMeanGC, theoMeanGC,theoStdvGC);
+
+	cerr<<"GC content: mean:"<<theoMeanGC<<" stdev:"<<theoStdvGC<<endl;
+    }
 
 
 
@@ -966,6 +1091,33 @@ int main (int argc, char *argv[]) {
 	    deflineToPrint=deflineToPrint+tag;	    
 	}
 
+	if(gcBiasB){
+
+	    unsigned int gcCount=0;
+	    unsigned int atCount=0;
+
+	    for(unsigned int i=0;i<temp.size();i++){		
+		if(isResolvedDNA(temp[i])){		    
+		    if(temp[i] == 'G' ||
+		       temp[i] == 'C' ){
+			gcCount++;
+		    }else{
+			atCount++;
+		    }
+		}	    
+	    }
+	    double gcContent =  double(gcCount)/double(gcCount+atCount);
+	    double pSurv     = 1/(1+exp(gcBias*(gcContent-theoMeanGC)));
+	    pSurv            = pSurv * (pdfNorm(  gcContent, theoMeanGC, theoStdvGC)/maxNormGC);
+
+	    double rP = randomProb();
+	    bool killed = (rP>pSurv);
+	    //	    cout<<gcContent<<"\t"<<pSurv<<"\t"<<rP<<"\t"<<killed<<endl;
+	    if(killed){//killed do not increase f
+		continue;
+	    }
+	}
+
 	// cerr<<"---------"<<endl;
 	// cerr<<temp<<endl;
 	// cerr<<preFrag<<endl;
@@ -977,6 +1129,12 @@ int main (int argc, char *argv[]) {
 #ifdef DEBUG    
 	    cerr<<"no comp file"<<endl;
 #endif
+
+	    if(gcBiasB){
+		
+	    }
+
+
 	    if(outFastagzb){
 		outFastagzfp<<">"<<deflineToPrint<<"\n"<<frag<<endl;
 	    }else{

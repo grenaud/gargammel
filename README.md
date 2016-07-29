@@ -232,10 +232,33 @@ You can change the header to suit the version of R that you have.
 Bacterial databases:
 -------------------------------------------------------------------------------------
 
-TODO
+
+For the input/bact/ directory which represent the bacterial contamination, gargamel needs a set of fasta files that represent the different bacterial species. Each file corresponds to exactly one bacterial species. Each fasta file must contain the genome of the bacterial species, multiple scaffolds are allowed. Each fasta file must also be faidx indexed. This directory must also contain a file called "list".  This file contains the list of every fasta files in that directory along with their relative abundance in the desired bacterial contamination. For example:
+
+    bacteria1.fa	0.5
+    bacteria2.fa	0.3
+    bacteria3.fa	0.2
+
+
+
+To download the fasta a files from a metaBit [https://bitbucket.org/Glouvel/metabit] output, simply supply the "all_taxa.tsv" file, which details the different species and their abundance, make sure you are connected to the internet and use the retrieveFromMetabit script in as such:
+
+    mkdir exampleBacteriaDB
+    cd exampleBacteriaDB
+    [copy the all_taxa.tsv in the current directory]
+    src/microbial_fetcher/retrieveFromMetabit all_taxa.tsv
+
+
+This will download the necessary files from NCBI to create a database suitable for gargammel to simulate bacterial species in the exampleBacteriaDB/fasta and run samtools faidx on each file. You need standard UNIX utilities such as awk/sed/python/curl/wget/gzip to be installed as well as samtools. Please move the fasta/ directory produced (exampleBacteriaDB/fasta in the example above) to the input/bact/ one.
+
+
+
 If you simply want to use a uniform probability and do not wish to use a weighted list, if for instance your data is in input/bact/ in fasta files ending with .fa, simply type:
 
     total=`ls -1  input/bact/*fa |wc -l ` && ls -1 input/bact/*fa  | awk -v total="$total" ' {print $1"\t"(1/total)}' > input/bact/list
+
+
+
 
 
 Example bacterial databases:
