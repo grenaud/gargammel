@@ -8,11 +8,9 @@ import logging
 from random import randint
 logformat = "{}\t{}\t{}\t{}".format
 listformat = "{}\t{}\n".format
+species_filter = "{}\t{} below abundance cut off: {}\n".format
 
-
-currentpwd = str(os.getcwd());
-#sys.stderr.write("#"+currentpwd+"#");
-#sys.exit(1);
+currentpwd = os.getcwd()
 logging.basicConfig(filename=currentpwd+"/Microbial_ID.log",
                     level=logging.INFO,
                     filemode="w",
@@ -30,24 +28,30 @@ metanames_path = os.path.join(os.path.dirname(__file__),
 with gzip.open(metanames_path, "r") as fin:
     for line in fin:
         ID, ftp, species = re.split("\s+", line.rstrip("\n"))
-
         if species in metanames.keys():
             metanames[species].append((ID, ftp))
         else:
             metanames[species] = [(ID, ftp)]
 
+try:
+    abundance_cut_off = float(sys.argv[1])
+except IndexError:
+    abundance_cut_off = 0.1  # in percentages (1/1000) min relative abundance
+count_species_filter = 0
 for line in fileinput.input():
     species, abundance = re.split("\s+", line.rstrip())
-
+    if float(abundance) < abundance_cut_off:
+        count_species_filter += 1
+        # sys.stderr.write(species_filter(species, abundance,
+        #                                 abundance_cut_off))
+        continue
     try:
-
         hits = metanames[species]
         out = randint(0, len(hits)-1)
         ID, ftp = hits[out]
         ID_asm = ftp.split("/")[-1]
         ftp_fullpath = ftp+"/"+ID_asm+"_genomic.fna.gz"
 
-        # divide by 100 to get fraction instead of percentage
         logging.info(logformat(species, ID, ID_asm,
                                ftp_fullpath))
         sys.stdout.write(ftp_fullpath+"\n")
@@ -57,9 +61,14 @@ for line in fileinput.input():
         sys.stderr.write("{} is not present"
                          " in the database\n".format(species))
 
-listfile = ""+currentpwd+"/fasta/list";
-#sys.stderr.write(listfile);
+sys.stderr.write(str(len(species_lst)) +
+                 " genomes will be downloaded from ncbi.\n" +
+                 str(count_species_filter) + " microbe abundances were below" +
+                 " the minimum relative abundance cut off on " +
+                 str(abundance_cut_off) + "%\n")
 
-with open( listfile, "w") as fh_out:
+listfile = currentpwd+"/fasta/list"
+
+with open(listfile, "w") as fh_out:
     for species_name, abundance in species_lst:
         fh_out.write(listformat(species_name, abundance/sum_abundance))
