@@ -242,6 +242,19 @@ For the input/bact/ directory which represent the bacterial contamination, garga
     bacteria3.fa	0.2
 
 
+Examples of bacterial databases:
+-------------------------------------------------------------------------------------
+
+If you wish to download an example of a suitable bacterial database, you can simply type:
+   
+     make bacterialex
+
+this will create a directory called bactDBexample/ which contains clovis/ and k14/. clovis are from the bacterial profiled for the following publications respectively: Rasmussen, Morten, et al. "The genome of a Late Pleistocene human from a Clovis burial site in western Montana." Nature 506.7487 (2014): 225-229. and Seguin-Orlando, Andaine, et al. "Genomic structure in Europeans dating back at least 36,200 years." Science 346.6213 (2014): 1113-1118.
+
+You can copy the files from the fasta/ directory into the input's bact/ directory as such
+    
+    cp -v bacterialex/clovis/fasta/* [path to input]/bact/
+
 Creating bacterial databases from a metaBIT:
 -------------------------------------------------------------------------------------
 
@@ -266,19 +279,6 @@ If you simply want to use a uniform probability and do not wish to use a weighte
 
 metaBIT ref: Louvel, Guillaume, et al. "metaBIT, an integrative and automated metagenomic pipeline for analyzing microbial profiles from high-throughput sequencing shotgun data." Molecular ecology resources (2016).
 
-
-Example bacterial databases:
--------------------------------------------------------------------------------------
-
-If you wish to download an example of a suitable bacterial database, you can simply type:
-   
-     make bacterialex
-
-this will create a directory called bactDBexample/ which contains clovis/ and k14/. clovis are from the bacterial profiled for the following publications respectively: Rasmussen, Morten, et al. "The genome of a Late Pleistocene human from a Clovis burial site in western Montana." Nature 506.7487 (2014): 225-229. and Seguin-Orlando, Andaine, et al. "Genomic structure in Europeans dating back at least 36,200 years." Science 346.6213 (2014): 1113-1118.
-
-You can copy the files from the fasta/ directory into the input's bact/ directory as such
-    
-    cp -v bacterialex/clovis/fasta/* [path to input]/bact/
 
 
 
