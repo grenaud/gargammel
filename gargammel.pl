@@ -231,8 +231,8 @@ sub usage
   "\t-matfile\t[matrix file prefix]\tRead the matrix file of substitutions
 		                                Provide the prefix only, both files must end with
 		                               	5.dat and 3.dat\n".
-  "\t-briggs\t\t[v,l,d,s]	  \tFor the Briggs et al. 2007 model
-		                  \t\tThe parameters must be comma-separated e.g.: -briggs 0.03,0.4,0.01,0.3
+  "\t-damage\t\t[v,l,d,s]	  \tFor the Briggs et al. 2007 model
+		                  \t\tThe parameters must be comma-separated e.g.: -damage 0.03,0.4,0.01,0.3
 		                  \t\t\tv: nick frequency
 		                  \t\t\tl: length of overhanging ends (geometric parameter)
 		                  \t\t\td: prob. of deamination of Cs in double-stranded parts
@@ -410,26 +410,26 @@ if( (defined $briggs) ){
   my @arr=split(",",$briggs);
 
   if($#arr != 3){
-    die "The option for -briggs must be 4 comma-delimited numbers, found ".($#arr+1)." parameters in ".$briggs."\n";
+    die "The option for -damage must be 4 comma-delimited numbers, found ".($#arr+1)." parameters in ".$briggs."\n";
   }
 
   if(!looks_like_number($arr[0])){
-    die "The option for -briggs must be 4 comma-delimited numbers, parameter 1 :".$arr[0]." must be a number\n";
+    die "The option for -damage must be 4 comma-delimited numbers, parameter 1 :".$arr[0]." must be a number\n";
   }
   if(!looks_like_number($arr[1])){
-    die "The option for -briggs must be 4 comma-delimited numbers, parameter 2 :".$arr[1]." must be a number\n";
+    die "The option for -damage must be 4 comma-delimited numbers, parameter 2 :".$arr[1]." must be a number\n";
   }
   if(!looks_like_number($arr[2])){
-    die "The option for -briggs must be 4 comma-delimited numbers, parameter 3 :".$arr[2]." must be a number\n";
+    die "The option for -damage must be 4 comma-delimited numbers, parameter 3 :".$arr[2]." must be a number\n";
   }
   if(!looks_like_number($arr[3])){
-    die "The option for -briggs must be 4 comma-delimited numbers, parameter 4 :".$arr[3]." must be a number\n";
+    die "The option for -damage must be 4 comma-delimited numbers, parameter 4 :".$arr[3]." must be a number\n";
   }
 }
 
 if( (defined $matfile) &&
     (defined $briggs)  ){
-  die "Specify either -matfile or -briggs but not both\n";
+  die "Specify either -matfile or -damage but not both\n";
 }
 
 
@@ -1079,7 +1079,7 @@ if( (defined $matfile)
   }
 
   if( (defined $briggs) ){
-    $cmde .= " -briggs ".$briggs." ";
+    $cmde .= " -damage ".$briggs." ";
   }
 
 
@@ -1103,7 +1103,7 @@ if( (defined $matfile)
   }
 
   if( (defined $briggs) ){
-    $cmde .= " -briggs ".$briggs." ";
+    $cmde .= " -damage ".$briggs." ";
   }
 
 

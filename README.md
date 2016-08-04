@@ -243,7 +243,7 @@ For the input/bact/ directory which represent the bacterial contamination, garga
 
 
 
-To download the fasta a files from a metaBit [https://bitbucket.org/Glouvel/metabit] output, simply supply the "all_taxa.tsv" file, which details the different species and their abundance, make sure you are connected to the internet and use the retrieveFromMetabit script in as such:
+To download the fasta a files from a metaBIT [https://bitbucket.org/Glouvel/metabit] output, simply supply the "all_taxa.tsv" file, which details the different species and their abundance, make sure you are connected to the internet and use the retrieveFromMetabit script in as such:
 
     mkdir exampleBacteriaDB
     cd exampleBacteriaDB
@@ -266,7 +266,16 @@ If you simply want to use a uniform probability and do not wish to use a weighte
 Example bacterial databases:
 -------------------------------------------------------------------------------------
 
-TODO
+If you wish to download an example of a suitable bacterial database, you can simply type:
+   
+     make bacterialex
+
+this will create a directory called bactDBexample/ which contains clovis/ and k14/. clovis are from the bacterial profiled for the following publications respectively: Rasmussen, Morten, et al. "The genome of a Late Pleistocene human from a Clovis burial site in western Montana." Nature 506.7487 (2014): 225-229. and Seguin-Orlando, Andaine, et al. "Genomic structure in Europeans dating back at least 36,200 years." Science 346.6213 (2014): 1113-1118.
+
+You can copy the files from the fasta/ directory into the input's bact/ directory as such
+    
+    cp -v bacterialex/clovis/fasta/* [path to input]/bact/
+
 
 
 

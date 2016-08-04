@@ -33,6 +33,11 @@ art_src_MountRainier_Linux/art_illumina_src/art_illumina.o: #todo: add wget afte
 	tar xvfz artsrcmountrainier20160605linuxtgz.tgz
 	cd art_src_MountRainier_Linux/ && ./configure && make && cd ..
 
+bacterialex:
+	mkdir -p bactDBexample
+	cd bactDBexample/ && wget -O clovis.tar.gz https://www.dropbox.com/s/aetfpx7xe3z5vdw/clovis.tar.gz?dl=1 && tar xvfz clovis.tar.gz && rm -f clovis.tar.gz  && cd ../
+	cd bactDBexample/ && wget -O k14.tar.gz https://www.dropbox.com/s/d4s97g13mp01f5b/k14.tar.gz?dl=1  && tar xvfz k14.tar.gz && rm -f k14.tar.gz && cd ../
+
 clean:
 	make -C libgab clean
 	make -C src clean
