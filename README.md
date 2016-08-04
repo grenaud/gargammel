@@ -73,11 +73,11 @@ Which represent the endogenous ancient human, the present-day human contaminant 
 Example of usage:
 -------------------------------------------------------------------------------------
 
-This is an example of usage to simulate a slightly contaminated (10%) dataset. First we will simulate chromosomes using ms and seq-gen:
+This is an example of usage to simulate a slightly contaminated (10%) dataset. First, we will simulate chromosomes using ms and seq-gen:
 
     mkdir data
   
-Next we will create 1000 simulations of 2 lineages that are allowed to coalesce after 0.2 units of coalescence. The first one will represent our endogenous ancient human while the other, the present-day human contaminant. It will also generate an additiona chromosome from the same population as the contaminant to be used as reference for alignment . We generate sequences for those using the following script:
+Next we will create 1000 simulations of 2 lineages that are allowed to coalesce after 0.2 units of coalescence. The first one will represent our endogenous ancient human while the other, the present-day human contaminant. It will also generate an additional chromosome from the same population as the contaminant to be used as reference for alignment . We generate sequences for those using the following script:
 
     cd data/
     python ../ms2chromosomes.py  -s 0.2 -f . -n 1000 
@@ -92,7 +92,7 @@ This will create the following files:
     endo/segsites
     ref.fa
 
-The segsites files corresponds to heterozygous sites between both endogenous genomes.
+The segsites files correspond to heterozygous sites between both endogenous genomes.
 
 
 Then we will create the aDNA fragments:
@@ -100,12 +100,12 @@ Then we will create the aDNA fragments:
     cd ..
     ./gargammel.pl -c 3  --comp 0,0.08,0.92 -s src/sizedist.size.gz  -matfile src/matrices/single-  -o data/simulation data/
 
-This will simulated a dataset with 8% human contamination. The deamination rate that will be used will follow a single-strand deamination using the empirical rates measured from the Loschbour individual from:
+This will simulate a dataset with 8% human contamination. The deamination rate that will be used will follow a single-strand deamination using the empirical rates measured from the Loschbour individual from:
 
     Lazaridis, Iosif, et al. "Ancient human genomes suggest three ancestral populations for present-day Europeans." Nature 513.7518 (2014): 409-413.
 
 
-The size distribution of the aDNA fragments is from a subset of:
+The size distribution of the aDNA fragments is a subset of:
 
     Fu, Qiaomei, et al. "Genome sequence of a 45,000-year-old modern human from western Siberia." Nature 514.7523 (2014): 445-449. 
 
@@ -270,7 +270,7 @@ If you wish, you can enter your email for the ftp from NCBI (to avoid getting ba
    src/microbial_fetcher/retrieveFromMetabit all_taxa.tsv anonymous@server.net
 
 
-This will download the necessary files from NCBI to create a database suitable for gargammel to simulate bacterial species in the exampleBacteriaDB/fasta and run samtools faidx on each file. You need standard UNIX utilities such as awk/sed/python/curl/wget/gzip to be installed as well as samtools. Please move the fasta/ directory produced (exampleBacteriaDB/fasta in the example above) to the input/bact/ one. The file named "exampleBacteriaDB/fastafasta/list" is the list of bacterial species along with their adundance. Another file, "exampleBacteriaDB/Microbial_ID.log" details the strain/ID and ftp link used.
+This will download the necessary files from NCBI to create a database suitable for gargammel to simulate bacterial species in the exampleBacteriaDB/fasta and run samtools faidx on each file. You need standard UNIX utilities such as awk/sed/python/curl/wget/gzip to be installed as well as samtools. Please move the fasta/ directory produced (exampleBacteriaDB/fasta in the example above) to the input/bact/ one. The file named "exampleBacteriaDB/fastafasta/list" is the list of bacterial species along with their abundance. Another file, "exampleBacteriaDB/Microbial_ID.log" details the strain/ID and ftp link used.
 
 If you simply want to use a uniform probability and do not wish to use a weighted list, if for instance your data is in input/bact/ in fasta files ending with .fa, simply type:
 
@@ -290,7 +290,7 @@ metaBIT ref: Louvel, Guillaume, et al. "metaBIT, an integrative and automated me
 Example of using empirical sequences for simulations:
 -------------------------------------------------------------------------------------
 
-To provide an example of using empirical VCF files to create sequences for the simulation, there is a folder exampleSeq/ with a Makefile. This makefile provides an simple example of creating 2 chromosomes (2 endogenous sequences + 2 contaminant sequences for a diploid genome) from VCF files. This makefile needs the following commands to be installed in the path:
+To provide an example of using empirical VCF files to create sequences for the simulation, there is a folder exampleSeq/ with a Makefile. This makefile provides a simple example of creating 2 chromosomes (2 endogenous sequences + 2 contaminant sequences for a diploid genome) from VCF files. This makefile needs the following commands to be installed in the path:
 * bedtools
 * bgzip
 * tabix
