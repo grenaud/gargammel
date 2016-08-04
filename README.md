@@ -242,25 +242,29 @@ For the input/bact/ directory which represent the bacterial contamination, garga
     bacteria3.fa	0.2
 
 
+Creating bacterial databases from a metaBIT:
+-------------------------------------------------------------------------------------
 
-To download the fasta a files from a metaBIT [https://bitbucket.org/Glouvel/metabit] output, simply supply the "all_taxa.tsv" file, which details the different species and their abundance, make sure you are connected to the internet and use the retrieveFromMetabit script in as such:
+metaBIT [https://bitbucket.org/Glouvel/metabit] is a metagenomic profiler from high-throughput sequencing shotgun data. To download the fasta a files based on a profile obtained using metaBIT's output, simply supply the "all_taxa.tsv" file, which details the different species and their abundance, make sure you are connected to the internet and use the retrieveFromMetabit script in as such:
 
     mkdir exampleBacteriaDB
     cd exampleBacteriaDB
     [copy the all_taxa.tsv in the current directory]
     src/microbial_fetcher/retrieveFromMetabit all_taxa.tsv
 
+If you wish, you can enter your email for the ftp from NCBI (to avoid getting banned from the FTP):
 
-This will download the necessary files from NCBI to create a database suitable for gargammel to simulate bacterial species in the exampleBacteriaDB/fasta and run samtools faidx on each file. You need standard UNIX utilities such as awk/sed/python/curl/wget/gzip to be installed as well as samtools. Please move the fasta/ directory produced (exampleBacteriaDB/fasta in the example above) to the input/bact/ one.
+   src/microbial_fetcher/retrieveFromMetabit all_taxa.tsv anonymous@server.net
 
 
+This will download the necessary files from NCBI to create a database suitable for gargammel to simulate bacterial species in the exampleBacteriaDB/fasta and run samtools faidx on each file. You need standard UNIX utilities such as awk/sed/python/curl/wget/gzip to be installed as well as samtools. Please move the fasta/ directory produced (exampleBacteriaDB/fasta in the example above) to the input/bact/ one. The file named "exampleBacteriaDB/fastafasta/list" is the list of bacterial species along with their adundance. Another file, "exampleBacteriaDB/Microbial_ID.log" details the strain/ID and ftp link used.
 
 If you simply want to use a uniform probability and do not wish to use a weighted list, if for instance your data is in input/bact/ in fasta files ending with .fa, simply type:
 
     total=`ls -1  input/bact/*fa |wc -l ` && ls -1 input/bact/*fa  | awk -v total="$total" ' {print $1"\t"(1/total)}' > input/bact/list
 
 
-
+metaBIT ref: Louvel, Guillaume, et al. "metaBIT, an integrative and automated metagenomic pipeline for analyzing microbial profiles from high-throughput sequencing shotgun data." Molecular ecology resources (2016).
 
 
 Example bacterial databases:
@@ -278,18 +282,6 @@ You can copy the files from the fasta/ directory into the input's bact/ director
 
 
 
-Creating bacterial databases from a metaBIT:
--------------------------------------------------------------------------------------
-
-If you have a microbiome profile obtained from metaBIT (ref: Louvel, Guillaume, et al. "metaBIT, an integrative and automated metagenomic pipeline for analyzing microbial profiles from high-throughput sequencing shotgun data." Molecular ecology resources (2016).) you can use the all_taxa.tsv file to retrieve the fasta files along with a file detailing the relative abundance for each file. Use the following command:
-   
-   src/microbial_fetcher/retrieveFromMetabit all_taxa.tsv
-
-If you wish, you can enter your email for the ftp from NCBI:
-
-   src/microbial_fetcher/retrieveFromMetabit all_taxa.tsv anonymous@server.net
-
-This will download the fasta files in a directory name "fasta/". The file named "fasta/list" is the list of bacterial species along with their adundance. Another file, "Microbial_ID.log" details the strain/ID and ftp link used.
 
 
 
