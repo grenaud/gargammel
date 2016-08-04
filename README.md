@@ -278,6 +278,22 @@ You can copy the files from the fasta/ directory into the input's bact/ director
 
 
 
+Creating bacterial databases from a metaBIT:
+-------------------------------------------------------------------------------------
+
+If you have a microbiome profile obtained from metaBIT (ref: Louvel, Guillaume, et al. "metaBIT, an integrative and automated metagenomic pipeline for analyzing microbial profiles from high-throughput sequencing shotgun data." Molecular ecology resources (2016).) you can use the all_taxa.tsv file to retrieve the fasta files along with a file detailing the relative abundance for each file. Use the following command:
+   
+   src/microbial_fetcher/retrieveFromMetabit all_taxa.tsv
+
+If you wish, you can enter your email for the ftp from NCBI:
+
+   src/microbial_fetcher/retrieveFromMetabit all_taxa.tsv anonymous@server.net
+
+This will download the fasta files in a directory name "fasta/". The file named "fasta/list" is the list of bacterial species along with their adundance. Another file, "Microbial_ID.log" details the strain/ID and ftp link used.
+
+
+
+
 
 Example of using empirical sequences for simulations:
 -------------------------------------------------------------------------------------
