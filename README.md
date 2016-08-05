@@ -293,5 +293,9 @@ To provide an example of using empirical VCF files to create sequences for the s
 * samtools
 * bcftools
 
+make sure than you are connected to the internet and type:
+
+    cd  exampleSeq/ 
+    make
 
  
