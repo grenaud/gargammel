@@ -293,9 +293,25 @@ To provide an example of using empirical VCF files to create sequences for the s
 * samtools
 * bcftools
 
-make sure than you are connected to the internet and type:
+Make sure bcftools supports the "consensus" command. Make sure than you are connected to the internet and type:
 
     cd  exampleSeq/ 
     make
 
- 
+This will download the VCF files from the Altai Neanderthal (endogenous) and a present-day human of European descent (contaminant) create 4 files:
+         
+    inputfolder/endo/endo.2.fa
+    inputfolder/endo/endo.1.fa
+    inputfolder/cont/cont.1.fa
+    inputfolder/cont/cont.2.fa
+
+along with their respective fasta index. If you wish to add bacterial sequences to the mix, please see the section above about "Examples of bacterial databases" and you can copy some files to cont/ directory: cp -v  bactDBexample/k14/fasta/* exampleSeq/inputfolder/bact/ 
+
+To create a sample with say 10% present-day human contamination with fragment length of 40bp, run:
+      
+./gargammel.pl -c 0.5  --comp 0,0.1,0.9 -l 40    -o exampleSeq/simulationc10 exampleSeq/inputfolder/
+
+If you have some bacterial sequences, to create a sample with say 70% bacterial content, 5% present-day human contamination and 25% endogenous, run:
+      
+./gargammel.pl -c 0.5  --comp 0.7,0.05,0.25 -l 40    -o exampleSeq/simulationb70c5 exampleSeq/inputfolder/
+
