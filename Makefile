@@ -7,6 +7,9 @@ all: 	src/fragSim src/deamSim src/adptSim art_src_MountRainier_Linux/art_illumin
 src/fragSim: libgab/utils.o bamtools/lib/libbamtools.so
 	make -C src
 
+src/fasta2fastas: libgab/utils.o bamtools/lib/libbamtools.so
+	make -C src
+
 src/deamSim: libgab/utils.o bamtools/lib/libbamtools.so
 	make -C src
 
