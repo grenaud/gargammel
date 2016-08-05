@@ -28,12 +28,12 @@ HGDP00521.hg19_1000g.21.mapp.vcf.gz.tbi: inputfolder
 
 
 inputfolder/endo/chr21endo1.fa.gz: 21.fa.gz.fai AltaiNea.hg19_1000g.21.mapp.vcf.gz.tbi
-	zcat 21.fa.gz | vcf-consensus -i inputfolder/endo/AltaiNea.hg19_1000g.21.mapp.vcf.gz | gzip > inputfolder/endo/chr21endo.gz
+	bcftools consensus -i -f  21.fa.gz  inputfolder/endo/AltaiNea.hg19_1000g.21.mapp.vcf.gz | gzip > inputfolder/endo/chr21endo.gz
 	../src/fasta2fastas inputfolder/endo/chr21endo.gz inputfolder/endo/chr21endo
 
 
 inputfolder/cont/chr21cont1.fa.gz: 21.fa.gz.fai HGDP00521.hg19_1000g.21.mapp.vcf.gz.tbi
-	zcat 21.fa.gz | vcf-consensus -i inputfolder/cont/HGDP00521.hg19_1000g.21.mapp.vcf.gz  | gzip > inputfolder/cont/chr21cont.gz
+	bcftools consensus -i -f  21.fa  inputfolder/cont/HGDP00521.hg19_1000g.21.mapp.vcf.gz  | gzip > inputfolder/cont/chr21cont.gz
 	../src/fasta2fastas inputfolder/cont/chr21cont.gz inputfolder/cont/chr21cont
 
 

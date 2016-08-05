@@ -282,18 +282,16 @@ metaBIT ref: Louvel, Guillaume, et al. "metaBIT, an integrative and automated me
 
 
 
-
-
-
-
-
-Example of using empirical sequences for simulations:
+Tutorial using empirical sequences for simulations:
 -------------------------------------------------------------------------------------
 
 To provide an example of using empirical VCF files to create sequences for the simulation, there is a folder exampleSeq/ with a Makefile. This makefile provides a simple example of creating 2 chromosomes (2 endogenous sequences + 2 contaminant sequences for a diploid genome) from VCF files. This makefile needs the following commands to be installed in the path:
+
 * bedtools
 * bgzip
 * tabix
 * samtools
-* vcf-consensus from vcftools (https://vcftools.github.io/)
+* bcftools
+
+
  
