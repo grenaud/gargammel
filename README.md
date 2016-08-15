@@ -305,7 +305,7 @@ This will download the VCF files from the Altai Neanderthal (endogenous) and a p
     inputfolder/cont/cont.1.fa
     inputfolder/cont/cont.2.fa
 
-along with their respective fasta index. If you wish to add bacterial sequences to the mix, please see the section above about "Examples of bacterial databases" and you can copy some files to cont/ directory: cp -v  bactDBexample/k14/fasta/* exampleSeq/inputfolder/bact/ 
+along with their respective fasta index. If you wish to add bacterial sequences to the mix, please see the section above about "Examples of bacterial databases" and you can copy some files to cont/ directory: cp -v  ../bactDBexample/k14/fasta/* inputfolder/bact/ 
 
 To create a sample with say 10% present-day human contamination with fragment length of 40bp, run:
       

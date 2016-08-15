@@ -14,7 +14,50 @@ use Time::HiRes qw/ time sleep /;
 my $mock =0;
 
 
+sub checkDeamParam{
+  my ($briggs,$matfile) = @_;
 
+
+  if ( (defined $matfile) ) {
+
+    if ( !(-e $matfile."5.dat")) {
+      die "Matrix file ".$matfile."5.dat does not exists\n";
+    }
+
+    if ( !(-e $matfile."3.dat")) {
+      die "Matrix file ".$matfile."3.dat does not exists\n";
+    }
+
+  }
+
+  if ( (defined $briggs) ) {
+    my @arr=split(",",$briggs);
+
+    if ($#arr != 3) {
+      die "The option for -damage must be 4 comma-delimited numbers, found ".($#arr+1)." parameters in ".$briggs."\n";
+    }
+
+    if (!looks_like_number($arr[0])) {
+      die "The option for -damage must be 4 comma-delimited numbers, parameter 1 :".$arr[0]." must be a number\n";
+    }
+    if (!looks_like_number($arr[1])) {
+      die "The option for -damage must be 4 comma-delimited numbers, parameter 2 :".$arr[1]." must be a number\n";
+    }
+    if (!looks_like_number($arr[2])) {
+      die "The option for -damage must be 4 comma-delimited numbers, parameter 3 :".$arr[2]." must be a number\n";
+    }
+    if (!looks_like_number($arr[3])) {
+      die "The option for -damage must be 4 comma-delimited numbers, parameter 4 :".$arr[3]." must be a number\n";
+    }
+  }
+
+
+  if ( (defined $matfile) &&
+       (defined $briggs)  ) {
+    die "Specify either -matfile or -damage but not both\n";
+  }
+
+}
 
 sub copycmd{
   my ($source,$destination) = @_;
@@ -239,6 +282,18 @@ sub usage
 		                  \t\t\ts: prob. of deamination of Cs in single-stranded parts\n".
 
   "\n".
+  " Alternatively, you can specify these options independently for the endogenous (e), bacterial (b)\n".
+  " and present-day human contaminant (c) using the following options:\n".
+  "\t-matfilee\t[matrix file prefix]\tEndogenous matrix file of substitutions\n".
+  "\t-damagee\t[v,l,d,s]	  \tEndogenous Briggs parameters\n".
+  "\t-matfileb\t[matrix file prefix]\tBacterial matrix file of substitutions\n".
+  "\t-damageb\t[v,l,d,s]	  \tBacterial Briggs parameters\n".
+  "\t-matfilec\t[matrix file prefix]\tHuman contaminant matrix file of substitutions\n".
+  "\t-damagecd\t[v,l,d,s]	  \tHuman contaminant Briggs parameters\n".
+  "\n please note that if you do specify deamination for one source but not for another, no deamination will be added\n".
+
+
+  "\n".
   " Adapter and sequencing\n".
   " ===================\n".
   "	-fa	[seq]			\tAdapter that is observed after the forward read (Default: ".substr($adapterF,0,10)."...)
@@ -282,6 +337,15 @@ my $misincc;
 
 my $matfile;
 my $briggs;
+my $matfilee;
+my $briggse;
+my $matfileb;
+my $briggsb;
+my $matfilec;
+my $briggsc;
+
+
+
 my $se=0;
 my $ss;
 
@@ -290,7 +354,7 @@ my $sa;
 my $rl;
 
 usage() if ( @ARGV < 1 or
-	     ! GetOptions('help|?' => \$help, 'mock' => \$mock, 'se' => \$se, 'ss=s' => \$ss, 'distmis=i' => \$distmis, 'misince=s' => \$misince,'misincb=s' => \$misincb,'misincc=s' => \$misincc, 'comp=s' => \$comp, 'matfile=s' => \$matfile, 'briggs=s' => \$briggs, 'o=s' => \$outputprefix, 'n=i' => \$numberOfFragments,'l=i' => \$fraglength,'s=s' => \$filefragsize, 'loc=s' => \$loc, 'fa=s' => \$fa, 'sa=s' => \$sa, 'rl=s' => \$rl, 'scale=s' => \$scale, 'c=f' => \$coverage, 'minsize=i' => \$minsize,'maxsize=i' => \$maxsize)
+	     ! GetOptions('help|?' => \$help, 'mock' => \$mock, 'se' => \$se, 'ss=s' => \$ss, 'distmis=i' => \$distmis, 'misince=s' => \$misince,'misincb=s' => \$misincb,'misincc=s' => \$misincc, 'comp=s' => \$comp, 'matfile=s' => \$matfile, 'briggs=s' => \$briggs,'matfilee=s' => \$matfilee, 'briggse=s' => \$briggse,'matfileb=s' => \$matfileb, 'briggsb=s' => \$briggsb,'matfilec=s' => \$matfilec, 'briggsc=s' => \$briggsc,'o=s' => \$outputprefix, 'n=i' => \$numberOfFragments,'l=i' => \$fraglength,'s=s' => \$filefragsize, 'loc=s' => \$loc, 'fa=s' => \$fa, 'sa=s' => \$sa, 'rl=s' => \$rl, 'scale=s' => \$scale, 'c=f' => \$coverage, 'minsize=i' => \$minsize,'maxsize=i' => \$maxsize)
           or defined $help );
 
 if( !(defined $ss) ){
@@ -394,43 +458,62 @@ if( (defined $misincb) ){
   }
 }
 
-if( (defined $matfile) ){
 
-  if( !(-e $matfile."5.dat")){
-    die "Matrix file ".$matfile."5.dat does not exists\n";
+
+checkDeamParam($briggs, $matfile );
+checkDeamParam($briggse,$matfilee);
+checkDeamParam($briggsb,$matfileb);
+checkDeamParam($briggsc,$matfilec);
+
+
+
+if ( (defined $matfile) ||
+     (defined $briggs )  ) {
+
+  if ( (defined $matfilee) ||
+       (defined $briggse )  ) {
+    die "Specify either patterns for endogenous and bacterial using either -matfile or -damage but do not specify other parameters\n";
   }
 
-  if( !(-e $matfile."3.dat")){
-    die "Matrix file ".$matfile."3.dat does not exists\n";
+  if ( (defined $matfileb) ||
+       (defined $briggsb )  ) {
+    die "Specify either patterns for endogenous and bacterial using either -matfile or -damage but do not specify other parameters\n";
   }
+
+  if ( (defined $matfilec) ||
+       (defined $briggsc )  ) {
+    die "Specify either patterns for endogenous and bacterial using either -matfile or -damage but do not specify other parameters\n";
+  }
+
+
+  if(defined $matfile){
+    $matfilee = $matfile;
+    $matfileb = $matfile;
+  }
+
+  if(defined $briggs){
+    $briggse = $briggs;
+    $briggsb = $briggs;
+  }
+
+
 
 }
 
-if( (defined $briggs) ){
-  my @arr=split(",",$briggs);
 
-  if($#arr != 3){
-    die "The option for -damage must be 4 comma-delimited numbers, found ".($#arr+1)." parameters in ".$briggs."\n";
-  }
 
-  if(!looks_like_number($arr[0])){
-    die "The option for -damage must be 4 comma-delimited numbers, parameter 1 :".$arr[0]." must be a number\n";
-  }
-  if(!looks_like_number($arr[1])){
-    die "The option for -damage must be 4 comma-delimited numbers, parameter 2 :".$arr[1]." must be a number\n";
-  }
-  if(!looks_like_number($arr[2])){
-    die "The option for -damage must be 4 comma-delimited numbers, parameter 3 :".$arr[2]." must be a number\n";
-  }
-  if(!looks_like_number($arr[3])){
-    die "The option for -damage must be 4 comma-delimited numbers, parameter 4 :".$arr[3]." must be a number\n";
-  }
-}
 
-if( (defined $matfile) &&
-    (defined $briggs)  ){
-  die "Specify either -matfile or -damage but not both\n";
-}
+
+
+
+
+
+
+
+
+
+
+
 
 
 if( (defined $loc) &&
@@ -927,9 +1010,7 @@ for(my $i=0;$i<=$#arrayofFilesbact;$i++){
 #                      #
 ########################
 
-#selecting endogenous fragments
-
-
+#SELECTING ENDOGENOUS FRAGMENTS
 if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
 
   if ($diploidMode) {
@@ -985,16 +1066,16 @@ if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
 	$cmd1 .= " -l ".$fraglength." ";
       }
     }
-    $cmd1 .= "  ".$arrayofFilesendo[0]." |/bin/gzip > ".$outputprefix.".e.fa.gz";
+    $cmd1 .= "  ".$arrayofFilesendo[0]." | gzip > ".$outputprefix.".e.fa.gz";
     runcmd($cmd1);
 
   }
 } else {
-  my $cmd1="/bin/touch ".$outputprefix.".e.fa.gz";
+  my $cmd1="touch ".$outputprefix.".e.fa.gz";
   runcmd($cmd1);
 }
 
-#selecting contaminant fragments
+#SELECTING CONTAMINANT FRAGMENTS
 if ($#arrayofFilescont != -1 && $numberOfFragmentsC>0) {
 
   for (my $i=0;$i<=$#arrayofFilescont;$i++) {
@@ -1016,7 +1097,7 @@ if ($#arrayofFilescont != -1 && $numberOfFragmentsC>0) {
       }
     }
 
-    $cmd1 .= "  ".$arrayofFilescont[$i]." |/bin/gzip ";
+    $cmd1 .= "  ".$arrayofFilescont[$i]." | gzip ";
     if($i==0){
       $cmd1 .= " >  ";
     }else{
@@ -1031,8 +1112,7 @@ if ($#arrayofFilescont != -1 && $numberOfFragmentsC>0) {
   runcmd($cmd1);
 }
 
-#selecting bacterial fragments
-
+#SELECTING BACTERIAL FRAGMENTS
 if ($#arrayofFilesbact != -1 && $numberOfFragmentsB>0) {
   for (my $i=0;$i<=$#arrayofFilesbact;$i++) {
     my $cmd1="".$fragsim." -tag b".($i+1)." -n ".$arrayofFilesbactToExtract[$i];
@@ -1050,7 +1130,7 @@ if ($#arrayofFilesbact != -1 && $numberOfFragmentsB>0) {
 	$cmd1 .= " -l ".$fraglength." ";
       }
     }
-    $cmd1 .= "  ".$arrayofFilesbact[$i]." |/bin/gzip ";
+    $cmd1 .= "  ".$arrayofFilesbact[$i]." | gzip ";
     if($i==0){
       $cmd1 .= " >  ";
     }else{
@@ -1064,60 +1144,91 @@ if ($#arrayofFilesbact != -1 && $numberOfFragmentsB>0) {
   runcmd($cmd1);
 }
 
+
 ########################
 #                      #
 #  Calling deamSim     #
 #                      #
 ########################
-if( (defined $matfile)
+#endogenous
+if( (defined $matfilee)
     ||
-    (defined $briggs) ){
+    (defined $briggse) ){
 
   my $cmde="".$deamsim." ";
-  if( (defined $matfile) ){
-    $cmde .= " -matfile ".$matfile." ";
+  if( (defined $matfilee) ){
+    $cmde .= " -matfile ".$matfilee." ";
   }
 
-  if( (defined $briggs) ){
-    $cmde .= " -damage ".$briggs." ";
+  if( (defined $briggse) ){
+    $cmde .= " -damage ".$briggse." ";
   }
 
-
-  $cmde.=" ".$outputprefix.".e.fa.gz  |/bin/gzip > ".$outputprefix."_d.fa.gz";
+  $cmde.=" ".$outputprefix.".e.fa.gz  | gzip > ".$outputprefix."_d.fa.gz";
   runcmd($cmde);
 }else{
 
   #no deamination on the endogenous
-  my $cmde= "/bin/zcat -f ".$outputprefix.".e.fa.gz  | /bin/gzip > ".$outputprefix."_d.fa.gz";
+  my $cmde= "gzip -c -d  ".$outputprefix.".e.fa.gz  | gzip > ".$outputprefix."_d.fa.gz";
   runcmd($cmde);
 
 }
 
-if( (defined $matfile)
+
+#bacteria
+if( (defined $matfileb)
     ||
-    (defined $briggs) ){
+    (defined $briggsb) ){
 
-  my $cmde="".$deamsim." ";
-  if( (defined $matfile) ){
-    $cmde .= " -matfile ".$matfile." ";
+  my $cmdb="".$deamsim." ";
+  if( (defined $matfileb) ){
+    $cmdb .= " -matfile ".$matfileb." ";
   }
 
-  if( (defined $briggs) ){
-    $cmde .= " -damage ".$briggs." ";
+  if( (defined $briggsb) ){
+    $cmdb .= " -damage ".$briggsb." ";
   }
 
-
-  $cmde.=" ".$outputprefix.".b.fa.gz  |/bin/gzip >> ".$outputprefix."_d.fa.gz";
-  runcmd($cmde);
+  $cmdb.=" ".$outputprefix.".b.fa.gz  |gzip >> ".$outputprefix."_d.fa.gz";
+  runcmd($cmdb);
 }else{
   #no deamination on the bacteria
-  my $cmde= "/bin/zcat -f ".$outputprefix.".b.fa.gz  | /bin/gzip >> ".$outputprefix."_d.fa.gz";
-  runcmd($cmde);
+  my $cmdb= "gzip -c -d  ".$outputprefix.".b.fa.gz  | gzip >> ".$outputprefix."_d.fa.gz";
+  runcmd($cmdb);
 }
 
-#no deamination on the contaminant
-my $cmdec= "/bin/zcat -f ".$outputprefix.".c.fa.gz  | /bin/gzip >> ".$outputprefix."_d.fa.gz";
-runcmd($cmdec);
+
+
+
+
+
+
+
+
+
+#human cont.
+if( (defined $matfilec)
+    ||
+    (defined $briggsc) ){
+
+  my $cmdc="".$deamsim." ";
+  if( (defined $matfilec) ){
+    $cmdc .= " -matfile ".$matfilec." ";
+  }
+
+  if( (defined $briggsc) ){
+    $cmdc .= " -damage ".$briggsc." ";
+  }
+
+  $cmdc.=" ".$outputprefix.".c.fa.gz  |gzip >> ".$outputprefix."_d.fa.gz";
+  runcmd($cmdc);
+}else{
+
+  #no deamination on the contaminant
+  my $cmdec= "gzip -c -d  ".$outputprefix.".c.fa.gz  | gzip >> ".$outputprefix."_d.fa.gz";
+  runcmd($cmdec);
+
+}
 
 ########################
 #                      #
@@ -1157,17 +1268,17 @@ runcmd($cmdsq);
 
 my $cmdzip;
 
-$cmdzip = "/bin/gzip -f ".$outputprefix."_a.fa";
+$cmdzip = "gzip -f ".$outputprefix."_a.fa";
 runcmd($cmdzip);
 
 if($se){
-  $cmdzip = "/bin/gzip -f ".$outputprefix."_s.fq";
+  $cmdzip = "gzip -f ".$outputprefix."_s.fq";
   runcmd($cmdzip);
   print STDERR "Single-end reads available here: ".$outputprefix."_s.fq.gz\n";
 }else{
-  $cmdzip = "/bin/gzip -f ".$outputprefix."_s1.fq";
+  $cmdzip = "gzip -f ".$outputprefix."_s1.fq";
   runcmd($cmdzip);
-  $cmdzip = "/bin/gzip -f ".$outputprefix."_s2.fq";
+  $cmdzip = "gzip -f ".$outputprefix."_s2.fq";
   runcmd($cmdzip);
 
   print STDERR "Paired-end forward reads available here: ".$outputprefix."_s1.fq.gz\n";

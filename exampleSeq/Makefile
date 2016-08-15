@@ -17,7 +17,7 @@ AltaiNea.hg19_1000g.21.mapp.vcf.gz.tbi: inputfolder
 
 21.fa.gz.fai:
 	wget http://hgdownload.cse.ucsc.edu/goldenPath/hg19/chromosomes/chr21.fa.gz
-	zcat chr21.fa.gz |sed "s/^>chr21/>21/g" |bgzip -c > 21.fa.gz
+	gzip -c -d chr21.fa.gz |sed "s/^>chr21/>21/g" |bgzip -c > 21.fa.gz
 	samtools faidx 21.fa.gz
 
 HGDP00521.hg19_1000g.21.mapp.vcf.gz.tbi: inputfolder
@@ -43,8 +43,8 @@ inputfolder/cont/chr21cont1.fa.gz: 21.fa.gz.fai HGDP00521.hg19_1000g.21.mapp.vcf
 
 
 inputfolder/endo/endo.2.fa.fai: inputfolder/endo/chr21endo1.fa.gz
-	zcat inputfolder/endo/chr21endo1.fa.gz >  inputfolder/endo/endo.1.fa
-	zcat inputfolder/endo/chr21endo2.fa.gz >  inputfolder/endo/endo.2.fa
+	gzip -c -d  inputfolder/endo/chr21endo1.fa.gz >  inputfolder/endo/endo.1.fa
+	gzip -c -d  inputfolder/endo/chr21endo2.fa.gz >  inputfolder/endo/endo.2.fa
 	samtools faidx inputfolder/endo/endo.1.fa
 	samtools faidx inputfolder/endo/endo.2.fa
 	rm -fv inputfolder/endo/chr21endo1.fa.gz
@@ -54,8 +54,8 @@ inputfolder/endo/endo.2.fa.fai: inputfolder/endo/chr21endo1.fa.gz
 
 
 inputfolder/cont/cont.2.fa.fai: inputfolder/cont/chr21cont1.fa.gz
-	zcat inputfolder/cont/chr21cont1.fa.gz >  inputfolder/cont/cont.1.fa
-	zcat inputfolder/cont/chr21cont2.fa.gz >  inputfolder/cont/cont.2.fa
+	gzip -c -d  inputfolder/cont/chr21cont1.fa.gz >  inputfolder/cont/cont.1.fa
+	gzip -c -d  inputfolder/cont/chr21cont2.fa.gz >  inputfolder/cont/cont.2.fa
 	samtools faidx inputfolder/cont/cont.1.fa
 	samtools faidx inputfolder/cont/cont.2.fa
 	rm -fv inputfolder/cont/chr21cont1.fa.gz
