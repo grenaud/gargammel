@@ -3,8 +3,7 @@
 =====================================================================================
 
 gargammel is a set of programs aimed at simulating ancient DNA fragments. For ancient hominin samples
-our program can also simulate various levels of present-day human contamination. It can also add
-various levels of bacterial contamination.
+our program can also simulate various levels of present-day human contamination and microbial contamination.
 
 
 
@@ -66,18 +65,18 @@ The basic input is a directory with 3 subfolders named:
  * cont/
  * bact/
 
-Which represent the endogenous ancient human, the present-day human contaminant and the bacterial contamination respectively. Each file inside represents a genome (nor a chromosome or scaffold). The endogenous ancient human can only contain more than 2 genomes since it is a diploid individual. For the bacterial contamination, please add a representative set of bacteria for your sample. Please see the section about the examples of bacterial databases.
+Which represent the endogenous ancient human, the present-day human contaminant and the microbial contamination respectively. Each file inside represents a genome (nor a chromosome or scaffold). The endogenous ancient human can only contain more than 2 genomes since it is a diploid individual. For the microbial contamination, please add a representative set of microbes for your sample (see the section about the examples of microbial databases).
 
 
 
 Example of usage:
 -------------------------------------------------------------------------------------
 
-This is an example of usage to simulate a slightly contaminated (10%) dataset. First, we will simulate chromosomes using ms and seq-gen:
+This is an example of usage to simulate a slightly contaminated (8%) dataset. First, we will simulate chromosomes using ms and seq-gen:
 
     mkdir data
   
-Next we will create 1000 simulations of 2 lineages that are allowed to coalesce after 0.2 units of coalescence. The first one will represent our endogenous ancient human while the other, the present-day human contaminant. It will also generate an additional chromosome from the same population as the contaminant to be used as reference for alignment . We generate sequences for those using the following script:
+Next, we will create 1000 simulations of 2 lineages that are allowed to coalesce after 0.2 units of coalescence. The first one will represent our endogenous ancient human while the other, the present-day human contaminant. It will also generate an additional chromosome from the same population as the contaminant to be used as reference for alignment. We generate sequences for those using the following script:
 
     cd data/
     python ../ms2chromosomes.py  -s 0.2 -f . -n 1000 
@@ -203,7 +202,7 @@ The lines above specify the base count close +/- 4 bases to the 3p end for fragm
 
 Such a file can be generated using mapDamage2.0: 
 
-	Jónsson, Hákon, et al. "mapDamage2. 0: fast approximate Bayesian estimates of ancient DNA damage parameters." Bioinformatics (2013): btt193.
+	JÃ³nsson, HÃ¡kon, et al. "mapDamage2.0: fast approximate Bayesian estimates of ancient DNA damage parameters." Bioinformatics (2013): btt193.
 
 It is normally called "dnacomp.txt" in the output directory, you can filter a single chromosome (in this case 21) using this command:
 
@@ -235,7 +234,7 @@ Bacterial databases:
 -------------------------------------------------------------------------------------
 
 
-For the input/bact/ directory which represent the bacterial contamination, gargamel needs a set of fasta files that represent the different bacterial species. Each file corresponds to exactly one bacterial species. Each fasta file must contain the genome of the bacterial species, multiple scaffolds are allowed. Each fasta file must also be faidx indexed. This directory must also contain a file called "list".  This file contains the list of every fasta files in that directory along with their relative abundance in the desired bacterial contamination. For example:
+For the input/bact/ directory which represent the microbial contamination, gargammel needs a set of fasta files that represent the different microbes. Each file corresponds to exactly one microbial species. Each fasta file must contain the genome of the microbial species, multiple scaffolds and plasmids are allowed. Each fasta file must also be faidx indexed. This directory must also contain a file called "list".  This file contains the list of every fasta files in that directory along with their relative abundance in the desired bacterial contamination. For example:
 
     bacteria1.fa	0.5
     bacteria2.fa	0.3
@@ -249,7 +248,7 @@ If you wish to download an example of a suitable bacterial database, you can sim
    
      make bacterialex
 
-this will create a directory called bactDBexample/ which contains clovis/ and k14/. clovis are from the bacterial profiled for the following publications respectively: Rasmussen, Morten, et al. "The genome of a Late Pleistocene human from a Clovis burial site in western Montana." Nature 506.7487 (2014): 225-229. and Seguin-Orlando, Andaine, et al. "Genomic structure in Europeans dating back at least 36,200 years." Science 346.6213 (2014): 1113-1118.
+this will create a directory called bactDBexample/ which contains clovis/ and k14/, the profiled microbial communities from Rasmussen et al. "The genome of a Late Pleistocene human from a Clovis burial site in western Montana." Nature 506.7487 (2014): 225-229. and Seguin-Orlando et al. "Genomic structure in Europeans dating back at least 36,200 years." Science 346.6213 (2014): 1113-1118, respectively.
 
 You can copy the files from the fasta/ directory into the input's bact/ directory as such
     
@@ -258,7 +257,7 @@ You can copy the files from the fasta/ directory into the input's bact/ director
 Creating bacterial databases from a metaBIT:
 -------------------------------------------------------------------------------------
 
-metaBIT [https://bitbucket.org/Glouvel/metabit] is a metagenomic profiler from high-throughput sequencing shotgun data. To download the fasta a files based on a profile obtained using metaBIT's output, simply supply the "all_taxa.tsv" file, which details the different species and their abundance, make sure you are connected to the internet and use the retrieveFromMetabit script in as such:
+metaBIT [https://bitbucket.org/Glouvel/metabit] is a metagenomic profiler from high-throughput sequencing shotgun data. To download the fasta files based on a profile obtained using metaBIT's output, simply supply the "all_taxa.tsv" file, which details the different species and their abundances, make sure you are connected to the internet and use the retrieveFromMetabit script in as such:
 
     mkdir exampleBacteriaDB
     cd exampleBacteriaDB
@@ -270,14 +269,14 @@ If you wish, you can enter your email for the ftp from NCBI (to avoid getting ba
    src/microbial_fetcher/retrieveFromMetabit all_taxa.tsv anonymous@server.net
 
 
-This will download the necessary files from NCBI to create a database suitable for gargammel to simulate bacterial species in the exampleBacteriaDB/fasta and run samtools faidx on each file. You need standard UNIX utilities such as awk/sed/python/curl/wget/gzip to be installed as well as samtools. Please move the fasta/ directory produced (exampleBacteriaDB/fasta in the example above) to the input/bact/ one. The file named "exampleBacteriaDB/fastafasta/list" is the list of bacterial species along with their abundance. Another file, "exampleBacteriaDB/Microbial_ID.log" details the strain/ID and ftp link used.
+This will download the necessary files from NCBI to create a database suitable for gargammel to simulate microbial species in the exampleBacteriaDB/fasta and run samtools faidx on each file. You need standard UNIX utilities such as awk/sed/python/curl/wget/gzip to be installed as well as samtools. Please move the fasta/ directory produced (exampleBacteriaDB/fasta in the example above) to the input/bact/. The file named "exampleBacteriaDB/fastafasta/list" is the list of bacterial species along with their abundance. Another file, "exampleBacteriaDB/Microbial_ID.log" details the strain/ID and ftp link used.
 
-If you simply want to use a uniform probability and do not wish to use a weighted list, if for instance your data is in input/bact/ in fasta files ending with .fa, simply type:
+If you want to use a uniform probability instead of a weighted list, go to "input/bact" and type (if fasta files end with .fa):
 
     total=`ls -1  input/bact/*fa |wc -l ` && ls -1 input/bact/*fa  | awk -v total="$total" ' {print $1"\t"(1/total)}' > input/bact/list
 
 
-metaBIT ref: Louvel, Guillaume, et al. "metaBIT, an integrative and automated metagenomic pipeline for analyzing microbial profiles from high-throughput sequencing shotgun data." Molecular ecology resources (2016).
+metaBIT ref: Louvel et al. "metaBIT, an integrative and automated metagenomic pipeline for analyzing microbial profiles from high-throughput sequencing shotgun data." Molecular ecology resources (2016).
 
 
 
@@ -291,9 +290,9 @@ To provide an example of using empirical VCF files to create sequences for the s
 * bgzip
 * tabix
 * samtools
-* bcftools
+* bcftools, must support "consensus" command
 
-Make sure bcftools supports the "consensus" command. Make sure than you are connected to the internet and type:
+Make sure that you are connected to the internet and type:
 
     cd  exampleSeq/ 
     make
@@ -311,7 +310,7 @@ To create a sample with say 10% present-day human contamination with fragment le
       
 ./gargammel.pl -c 0.5  --comp 0,0.1,0.9 -l 40    -o exampleSeq/simulationc10 exampleSeq/inputfolder/
 
-If you have some bacterial sequences, to create a sample with say 70% bacterial content, 5% present-day human contamination and 25% endogenous, run:
+If you have some microbial sequences, to create a sample with say 70% bacterial content, 5% present-day human contamination and 25% endogenous, run:
       
 ./gargammel.pl -c 0.5  --comp 0.7,0.05,0.25 -l 40    -o exampleSeq/simulationb70c5 exampleSeq/inputfolder/
 
