@@ -5,6 +5,7 @@
 gargammel is a set of programs aimed at simulating ancient DNA fragments. For ancient hominin samples
 our program can also simulate various levels of present-day human contamination and microbial contamination.
 
+The website for gargammel can be found here: https://grenaud.github.io/gargammel/
 
 
 Questions/feature requests :
