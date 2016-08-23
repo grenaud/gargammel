@@ -61,9 +61,10 @@ tracking"></a></div></noscript>
 <a id="welcome-to-github-pages" class="anchor" href="#welcome-to-github-pages" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>About</h3>
 <p>gargammel is a pipeline to simulate ancient DNA (aDNA) from a set of known references. gargammel seeks to emulate the <i>in vivo</i> process that leads to the sequencing of aDNA fragments:
 <ol>
-<li> First, fragments are collected from a set of reference sequences.  these reference sequences are designed to represent the endogenous DNA, the contaminant  from the same species (e.g.  present-day humans)  and bacterial sequences The patterns of mis-incorporations of ancient DNA fragments can be also accounted for
-<li> Second, aDNA damage is added to those fragments. Sequencing adapters are appended to form reads Of a specific length
-<li> Finally, sequencing errors with corresponding quality scores are applied to the reads.
+  <li> First, fragments are collected from a set of reference sequences. These reference sequences are designed to represent the endogenous DNA, the contamination both from the same species (e.g. present-day humans), and/or microbes.
+  <li> The patterns of mis-incorporations of ancient DNA fragments can be also accounted for.
+  <li> Second, aDNA damage is added to those fragments. Sequencing adapters are appended to form reads of a specific length.
+  <li> Finally, sequencing errors with corresponding quality scores are applied to the reads.
 </ol> 
 
 The resulting data is a set of Illumina reads that can be used to test certain hypotheses about aDNA. Here is a potential set of questions that could be answered using our pipeline:
@@ -71,7 +72,7 @@ The resulting data is a set of Illumina reads that can be used to test certain h
 <ul>	
 <li> Impact of present-day human contamination on various statistics used in population genetics
 <li> Influence of high levels of deamination on mapping
-<li> Impact of a high number of bacterial sequences on alignment to a specific reference
+<li> Impact of a high number of microbial sequences on alignment to a specific reference
 <li> Ability to infer the metagenomic profile of a sample depending on the aDNA fragment length distribution
 <li> Accuracy of contamination estimates
 </ul>
