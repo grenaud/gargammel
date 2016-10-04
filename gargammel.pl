@@ -258,7 +258,12 @@ sub usage
   "\n".
   " \tFragment size distribution: specify either one of the 3 possible options:
 		-l\t[length]\t\tGenerate fragments of fixed length  (default: ".$fraglength.")
-		-s\t[file]\t\t\tOpen file with size distribution
+		-s\t[file]\t\t\tOpen file with size distribution (one fragment length per line)
+		-f\t[file]\t\t\tOpen file with size frequency in the following format:
+				     length[TAB]freq	ex:
+				     40	0.0525
+				     41	0.0491
+				     ...
 
 		Length options:
 		\t--loc\t[file]\t\tLocation for lognormal distribution (default none)
@@ -329,6 +334,7 @@ my $compC;
 my $compE;
 
 my $filefragsize;
+my $filefragfreqsize;
 my $loc;
 my $scale;
 my $misince;
@@ -354,7 +360,7 @@ my $sa;
 my $rl;
 
 usage() if ( @ARGV < 1 or
-	     ! GetOptions('help|?' => \$help, 'mock' => \$mock, 'se' => \$se, 'ss=s' => \$ss, 'distmis=i' => \$distmis, 'misince=s' => \$misince,'misincb=s' => \$misincb,'misincc=s' => \$misincc, 'comp=s' => \$comp, 'matfile=s' => \$matfile, 'briggs=s' => \$briggs,'matfilee=s' => \$matfilee, 'briggse=s' => \$briggse,'matfileb=s' => \$matfileb, 'briggsb=s' => \$briggsb,'matfilec=s' => \$matfilec, 'briggsc=s' => \$briggsc,'o=s' => \$outputprefix, 'n=i' => \$numberOfFragments,'l=i' => \$fraglength,'s=s' => \$filefragsize, 'loc=s' => \$loc, 'fa=s' => \$fa, 'sa=s' => \$sa, 'rl=s' => \$rl, 'scale=s' => \$scale, 'c=f' => \$coverage, 'minsize=i' => \$minsize,'maxsize=i' => \$maxsize)
+	     ! GetOptions('help|?' => \$help, 'mock' => \$mock, 'se' => \$se, 'ss=s' => \$ss, 'distmis=i' => \$distmis, 'misince=s' => \$misince,'misincb=s' => \$misincb,'misincc=s' => \$misincc, 'comp=s' => \$comp, 'matfile=s' => \$matfile, 'briggs=s' => \$briggs,'matfilee=s' => \$matfilee, 'briggse=s' => \$briggse,'matfileb=s' => \$matfileb, 'briggsb=s' => \$briggsb,'matfilec=s' => \$matfilec, 'briggsc=s' => \$briggsc,'o=s' => \$outputprefix, 'n=i' => \$numberOfFragments,'l=i' => \$fraglength, 's=s' => \$filefragsize, 'f=s' => \$filefragfreqsize, 'loc=s' => \$loc, 'fa=s' => \$fa, 'sa=s' => \$sa, 'rl=s' => \$rl, 'scale=s' => \$scale, 'c=f' => \$coverage, 'minsize=i' => \$minsize,'maxsize=i' => \$maxsize)
           or defined $help );
 
 if( !(defined $ss) ){
@@ -521,10 +527,26 @@ if( (defined $loc) &&
   die "Must specify both --loc and --scale, not just one";
 }
 
+if( !(defined $loc) &&
+    (defined $scale) ){
+  die "Must specify both --loc and --scale, not just one";
+}
+
 if( (defined $filefragsize) ){
   if($fraglength!=35){
     die "Cannot specify both -l and -s";
   }
+}
+
+if( (defined $filefragfreqsize) ){
+  if($fraglength!=35){
+    die "Cannot specify both -l and -f";
+  }
+}
+
+if( (defined $filefragsize)     &&
+    (defined $filefragfreqsize) ){
+  die "Cannot specify both -s and -f";
 }
 
 
@@ -831,23 +853,45 @@ print STDERR "\nFound ".$sumB." bp bacterial, ".$sumC." bp contaminant, ".$sumE.
 
 my $averageSize;
 
-if(defined $filefragsize){
+if(defined $filefragfreqsize){
   my $num=0;
   my $sum=0;
-  open(FILE,"gunzip -f -c ".$filefragsize." | ");
+  open(FILE,"gunzip -f -c ".$filefragfreqsize." | ");
   while(my $line = <FILE>){
     chomp($line);
-    $sum+=$line;
-    $num++;
+    my @arr = split("\t",$line);
+    if($#arr != 1){
+      die "Line $line in $filefragfreqsize should have 2 tab-delimited fields\n";
+    }
+    $sum+=$arr[0]*$arr[1];
+    $num+=$arr[1];
   }
   close(FILE);
   $averageSize=($sum/$num);
+} else {
+  if (defined $filefragsize) {
+    my $num=0;
+    my $sum=0;
+    open(FILE,"gunzip -f -c ".$filefragsize." | ");
+    while (my $line = <FILE>) {
+      chomp($line);
+      my @arr = split("\t",$line);
+      if ($#arr != 0) {
+	die "Line $line in file $filefragsize should have 1 tab-delimited fields\n";
+      }
 
-}else{
-  if(defined $loc){
-    $averageSize = exp( $loc+($scale**2)/2);
-  }else{
-    $averageSize = $fraglength;
+      $sum+=$line;
+      $num++;
+    }
+    close(FILE);
+    $averageSize=($sum/$num);
+
+  } else {
+    if (defined $loc) {
+      $averageSize = exp( $loc+($scale**2)/2);
+    } else {
+      $averageSize = $fraglength;
+    }
   }
 }
 
@@ -1024,11 +1068,15 @@ if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
 
     if (defined $filefragsize) {
       $cmd1 .= " -s ".$filefragsize." ";
-    } else {
-      if (defined $loc) {
-	$cmd1 .= " --loc ".$loc." --scale ".$scale." ";
-      } else {
-	$cmd1 .= " -l ".$fraglength;
+    }else{
+      if (defined $filefragfreqsize) {
+	$cmd1 .= " -f ".$filefragfreqsize." ";
+      }else{
+	if (defined $loc) {
+	  $cmd1 .= " --loc ".$loc." --scale ".$scale." ";
+	} else {
+	  $cmd1 .= " -l ".$fraglength;
+	}
       }
     }
     $cmd1 .= "  ".$arrayofFilesendo[0]." |gzip > ".$outputprefix.".e.fa.gz";
@@ -1038,15 +1086,20 @@ if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
     if (defined $filefragsize) {
       $cmd2 .= " -s ".$filefragsize." ";
     } else {
-      if (defined $loc) {
-	$cmd2 .= " --loc ".$loc." --scale ".$scale." ";
-      } else {
-	$cmd2 .= " -l ".$fraglength." ";
+      if (defined $filefragfreqsize) {
+	$cmd2 .= " -f ".$filefragfreqsize." ";
+      }else{
+	if (defined $loc) {
+	  $cmd2 .= " --loc ".$loc." --scale ".$scale." ";
+	} else {
+	  $cmd2 .= " -l ".$fraglength." ";
+	}
       }
     }
     $cmd2.=" ".$arrayofFilesendo[1]." |gzip >> ".$outputprefix.".e.fa.gz";
     runcmd($cmd2);
 
+    #haploid mode
   } else {
 
     my $cmd1="".$fragsim." -tag e -n ".$numberOfFragmentsE1;
@@ -1060,10 +1113,14 @@ if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
     if (defined $filefragsize) {
       $cmd1 .= " -s ".$filefragsize." ";
     } else {
-      if (defined $loc) {
-	$cmd1 .= " --loc ".$loc." --scale ".$scale." ";
-      } else {
-	$cmd1 .= " -l ".$fraglength." ";
+      if (defined $filefragfreqsize) {
+	$cmd1 .= " -f ".$filefragfreqsize." ";
+      }else{
+	if (defined $loc) {
+	  $cmd1 .= " --loc ".$loc." --scale ".$scale." ";
+	} else {
+	  $cmd1 .= " -l ".$fraglength." ";
+	}
       }
     }
     $cmd1 .= "  ".$arrayofFilesendo[0]." | gzip > ".$outputprefix.".e.fa.gz";
@@ -1090,10 +1147,14 @@ if ($#arrayofFilescont != -1 && $numberOfFragmentsC>0) {
     if (defined $filefragsize) {
       $cmd1 .= " -s ".$filefragsize." ";
     } else {
-      if (defined $loc) {
-	$cmd1 .= " --loc ".$loc." --scale ".$scale." ";
-      } else {
-	$cmd1 .= " -l ".$fraglength." ";
+      if (defined $filefragfreqsize) {
+	$cmd1 .= " -f ".$filefragfreqsize." ";
+      }else{
+	if (defined $loc) {
+	  $cmd1 .= " --loc ".$loc." --scale ".$scale." ";
+	} else {
+	  $cmd1 .= " -l ".$fraglength." ";
+	}
       }
     }
 
@@ -1124,10 +1185,14 @@ if ($#arrayofFilesbact != -1 && $numberOfFragmentsB>0) {
     if (defined $filefragsize) {
       $cmd1 .= " -s ".$filefragsize." ";
     } else {
-      if (defined $loc) {
-	$cmd1 .= " --loc ".$loc." --scale ".$scale." ";
-      } else {
-	$cmd1 .= " -l ".$fraglength." ";
+      if (defined $filefragfreqsize) {
+	$cmd1 .= " -f ".$filefragfreqsize." ";
+      }else{
+	if (defined $loc) {
+	  $cmd1 .= " --loc ".$loc." --scale ".$scale." ";
+	} else {
+	  $cmd1 .= " -l ".$fraglength." ";
+	}
       }
     }
     $cmd1 .= "  ".$arrayofFilesbact[$i]." | gzip ";

@@ -31,6 +31,7 @@
 
 //#define DEBUG
 
+
 using namespace std;
 using namespace BamTools;
 
@@ -40,6 +41,11 @@ const uint32_t flagSingleReads =  4; // 00000100
 typedef struct{
     double s[4];
 } subrates;
+
+typedef struct{
+    int    l;    //fragment length
+    double cProb;//cumulative probability 
+} freqFragLength;
 
 
 typedef struct{
@@ -276,6 +282,10 @@ int main (int argc, char *argv[]) {
 
     string fileSizeFrag;
     bool   fileSizeFragB=false;
+    string fileSizeFragFreq;
+    bool   fileSizeFragBFreq=false;
+
+
     int minimumFragSize=   0;
     int maximumFragSize=1000;
     bool noRev=false;
@@ -313,14 +323,21 @@ int main (int argc, char *argv[]) {
 	"\t\t"+"-m\t"+"[length]" +"\t\t\t"+"Minimum fragments length < (default: "+stringify(minimumFragSize)+")"+"\n"+
 	"\t\t"+"-M\t"+"[length]" +"\t\t\t"+"Maximum fragments length > (default: "+stringify(maximumFragSize)+")"+"\n"+
 	"\n"+
-	"\tFragment size distribution: specify either one of the 3 possible options\n"+
+	"\tFragment size distribution: specify either one of the 4 possible options\n"+
 	"\t\t"+"-l\t"+"[length]" +"\t\t\t"+"Generate fragments of fixed length  (default: "+stringify(sizeFragments)+")"+"\n"+
-	"\t\t"+"-s\t"+"[file]"   +"\t\t\t\t"+"Open file with size distribution"+"\n"+
+	"\t\t"+"-s\t"+"[file]"   +"\t\t\t\t"+"Open file with size distribution (one fragment length per line)"+"\n"+
+	"\t\t"+"-f\t"+"[file]"   +"\t\t\t\t"+"Open file with size frequency in the following format:"+"\n"+
+	"\t\t"+"\t"   +""        +"\t\t\t\t\t"+"length[TAB]freq\tex:"+"\n"+
+	"\t\t"+"\t"   +""        +"\t\t\t\t\t"+"40\t0.0525"+"\n"+
+	"\t\t"+"\t"   +""        +"\t\t\t\t\t"+"41\t0.0491"+"\n"+
+	"\t\t"+"\t"   +""        +"\t\t\t\t\t"+"..."+"\n"+
+
+
 	"\n\t\tLength options:\n"+                                
 	"\t\t\t"+"--loc\t"+"[file]"   +  "\t\t\t"+"Location for lognormal distribution (default none)"+"\n"+
 	"\t\t\t"+"--scale\t"+"[file]"   +"\t\t\t"+"Scale for lognormal distribution      (default none)"+"\n"+
 	"\n\t\tGC bias options:\n"+
-	"\t\t"+"-gc\t"+"[gc bias]" +"\t\t\t"+"Generate fragments of fixed length  (default: "+stringify(gcBias)+")"+"\n"+	
+	"\t\t"+"-gc\t"+"[gc bias]" +"\t\t\t"+"Use GC bias factor  (default: "+stringify(gcBias)+")"+"\n"+	
 	
 	// "\n\tOutput options:\n"+  
 	// "\t\t"+"-seq  [fasta file]" +"\t\t"+"Output fasta file (default: stdout)"+"\n"+
@@ -414,6 +431,15 @@ int main (int argc, char *argv[]) {
 	    continue;
 	}
 
+	if(string(argv[i]) == "-f" ){
+	    fileSizeFragFreq=      string(argv[i+1]);
+	    i++;
+	    fileSizeFragBFreq=true;
+	    continue;
+	}
+
+
+
 	if(string(argv[i]) == "-gc" ){
 	    gcBias  = destringify<double>(argv[i+1]);
 	    i++;
@@ -473,8 +499,12 @@ int main (int argc, char *argv[]) {
 	    return 1;
 	}
 
-	distribution = lognormal_distribution<double>(location,scale);
+	if(fileSizeFragBFreq){ 
+	    cerr<<"Error: cannot specify --scale and --loc with -f"<<endl;
+	    return 1;
+	}
 
+	distribution = lognormal_distribution<double>(location,scale);
 
     }
 
@@ -484,16 +514,30 @@ int main (int argc, char *argv[]) {
     }
 
 
+
+    if(fileSizeFragB && fileSizeFragBFreq){ 
+	cerr<<"Error: cannot specify -s with -f"<<endl;
+	return 1;
+    }
+
+
     if(specifiedLength && fileSizeFragB){ 
 	cerr<<"Error: cannot specify -l and -s"<<endl;
 	return 1;
     }
 
-    if(!specifiedScale && !specifiedLength  && !fileSizeFragB){
-	cerr<<"Error: must specify -l, -s or either the log-normal parameters for the fragment size."<<endl;
+    if(specifiedLength && fileSizeFragBFreq){ 
+	cerr<<"Error: cannot specify -l and -f"<<endl;
 	return 1;
     }
 
+
+    if(!specifiedScale && !specifiedLength  && !fileSizeFragB && !fileSizeFragBFreq){
+	cerr<<"Error: must specify -l, -s, -f  or either the log-normal parameters for the fragment size."<<endl;
+	return 1;
+    }
+
+    // Use fragment size list
     vector<int> sizeFragList;
     if(fileSizeFragB){ 
 
@@ -504,6 +548,12 @@ int main (int argc, char *argv[]) {
 	if (sizeFragfd.good()){
 
 	    while ( getline (sizeFragfd,line)){
+		vector<string> fields = allTokens( line , '\t');
+		if(fields.size() != 1){
+		    cerr << "The following line "<<line<<" in file "<<fileSizeFrag<<" does not have 1 field"<<endl;
+		    return 1;		    
+		}
+
 		int t = destringify<int>( line );
 		if(t>=1)
 		    sizeFragList.push_back( t );
@@ -515,11 +565,47 @@ int main (int argc, char *argv[]) {
 	    return 1;
 	}
     }
+
+
+    // Use fragment size frequencies
+    vector<freqFragLength> fragLengthFreq;
+
+    if(fileSizeFragBFreq){ 
+
+	igzstream sizeFragfd;
+
+	sizeFragfd.open(fileSizeFragFreq.c_str(), ios::in);
+	double cumulProb=0.0;
+	if (sizeFragfd.good()){
+	    while ( getline (sizeFragfd,line)){
+		vector<string> fields = allTokens( line , '\t');
+		if(fields.size() != 2){
+		    cerr << "The following line "<<line<<" in file "<<fileSizeFragFreq<<" does not have 2 fields"<<endl;
+		    return 1;		    
+		}
+
+		cumulProb    += destringify<double>( fields[1] ); 
+		freqFragLength toadd;
+		toadd.l       = destringify<int>(    fields[0] ); 
+		toadd.cProb   = cumulProb;
+		fragLengthFreq.push_back(toadd);
+	    }
+	    sizeFragfd.close();
+
+	}else{
+	    cerr << "Unable to open size frequency file "<<fileSizeFragFreq<<endl;
+	    return 1;
+	}
+
+	if( (cumulProb<0.99) ||
+	    (cumulProb>1.01) ){
+	    cerr<<"Problem in file: "<<fileSizeFragFreq<<", the sum of frequencies does not sum to 1, sum="<<cumulProb<<endl;
+	    return 1;
+	}
+	    
+    }
+
     
-    // for(unsigned int i=0;i<sizeFragList.size();i++){
-    // 	cout<<sizeFragList[i]<<endl;
-    // }
-    // return 1;
 
     timeval time;
     gettimeofday(&time, NULL);
@@ -985,11 +1071,43 @@ int main (int argc, char *argv[]) {
 
 	int length      = 0;
 
-	if(fileSizeFragB          ){ length=sizeFragList[ randomInt(0,int(sizeFragList.size())) ]; 	}
+	//From file
+	if(fileSizeFragB          ){ 
+	    int randIndex = randomInt(0,int(sizeFragList.size())-1);
+	    length=sizeFragList[ randIndex ]; 	
+
+	}
 	else
-	    if(specifiedLength    ){ length=sizeFragments;                                      	}
+	    //from frequency
+	    if(fileSizeFragBFreq      ){ 
+		
+		double p          =  randomProb();
+		double cProbLower =  0.0;
+		bool foundL        =  true;
+		unsigned int indexFoundL=-1;
+		for(unsigned int i=0;i<fragLengthFreq.size();i++){
+		    if(cProbLower <=  p 
+		       &&
+		       p          <=  fragLengthFreq[i].cProb){						
+			indexFoundL = i;
+			foundL       = true;
+			cProbLower  = fragLengthFreq[i].cProb;
+			break;
+		    }
+		}
+
+		if(foundL){
+		    length=fragLengthFreq[ indexFoundL ].l; 	
+		}else{
+		    length=fragLengthFreq[ randomInt(0, int(fragLengthFreq.size())-1 ) ].l; 	
+		}
+	    }	
 	    else
-		if(specifiedScale ){ length=int(distribution(generator));                              	}
+		//fixed length
+		if(specifiedLength    ){ length=sizeFragments;                                      	}
+		else
+		    //scale and loc
+		    if(specifiedScale ){ length=int(distribution(generator));                              	}
 	
 	if(length<distFromEnd)//if the length of the fragment is lesser than the distance from end, creating a slight bias against short fragments but acceptable one if distFromEnd is small enough
 	    continue;
@@ -1131,6 +1249,32 @@ int main (int argc, char *argv[]) {
 #endif
 
 	    if(gcBiasB){
+
+
+		unsigned int gcCount=0;
+		unsigned int atCount=0;
+
+		for(unsigned int i=0;i<temp.size();i++){		
+		    if(isResolvedDNA(temp[i])){		    
+			if(temp[i] == 'G' ||
+			   temp[i] == 'C' ){
+			    gcCount++;
+			}else{
+			    atCount++;
+			}
+		    }	    
+		}
+		double gcContent =  double(gcCount)/double(gcCount+atCount);
+		double pSurv     = 1/(1+exp(gcBias*(gcContent-theoMeanGC)));
+		pSurv            = pSurv * (pdfNorm(  gcContent, theoMeanGC, theoStdvGC)/maxNormGC);
+
+		double rP = randomProb();
+		bool killed = (rP>pSurv);
+		//	    cout<<gcContent<<"\t"<<pSurv<<"\t"<<rP<<"\t"<<killed<<endl;
+		if(killed){//killed do not increase f
+		    continue;
+		}
+
 		
 	    }
 

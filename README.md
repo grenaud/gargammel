@@ -98,7 +98,7 @@ The segsites files correspond to heterozygous sites between both endogenous geno
 Then we will create the aDNA fragments:
 
     cd ..
-    ./gargammel.pl -c 3  --comp 0,0.08,0.92 -s src/sizedist.size.gz  -matfile src/matrices/single-  -o data/simulation data/
+    ./gargammel.pl -c 3  --comp 0,0.08,0.92 -f src/sizefreq.size.gz  -matfile src/matrices/single-  -o data/simulation data/
 
 This will simulate a dataset with 8% human contamination. The deamination rate that will be used will follow a single-strand deamination using the empirical rates measured from the Loschbour individual from:
 
@@ -210,7 +210,39 @@ It is normally called "dnacomp.txt" in the output directory, you can filter a si
 	grep "^21\|^#\|^Chr"  /path to mapDamage output/results_[sample name]/dnacomp.txt >  dnacomp.txt
 
 
+How can I specify the size distribution?
+-------------------------------------------------------------------------------------
 
+Ancient DNA molecules tend to be fragmented and can be very short but tend to have a specific shape. Both for the wrapper script (gargammel.pl) and the fragment simulation program (fragSim), there are are 4 ways to specifiy the :
+1) Specify a fixed length using -l 
+2) Open a file containing the size distribution using -s, one empirical fragment length per line eg:
+------------
+82
+95
+66
+144
+87
+68
+74
+48
+77
+43
+------------
+3) Open a file containing the size frequencies using -f in the format "size[TAB]freq" eg:
+------------
+40	0.017096
+41	0.01832
+42	0.0201954
+43	0.018399
+44	0.0195637
+45	0.0198993
+46	0.0196822
+47	0.0209456
+48	0.0203929
+49	0.0199783
+50	0.0204323
+------------
+4) Specify the size distribution using parameters from a log-normal distribution, using options --loc and --scale.
 
 How can I get parameters for the size distribution?
 -------------------------------------------------------------------------------------
