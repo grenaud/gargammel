@@ -1060,6 +1060,9 @@ if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
   if ($diploidMode) {
     my $cmd1="".$fragsim." -tag e1 -n ".$numberOfFragmentsE1;
 
+    $cmd1 .= " -m ".$minsize." ";
+    $cmd1 .= " -M ".$maxsize." ";
+
     if (defined $misince) {
       $cmd1 .= " --comp ".$misince." ";
       $cmd1 .= " --dist ".$distmis." ";

@@ -477,7 +477,14 @@ int main (int argc, char *argv[]) {
     // 	distFromEnd=0;
     // }
     //cerr<<distFromEnd<<endl;
-    
+
+    if(specifiedLength){
+	if(sizeFragments>maximumFragSize){
+	    cerr<<"Error: specified size "<<sizeFragments<<" is longer than the maximum allowed fragment size "<<maximumFragSize<<", use option -M to change this."<<endl;
+	    return 1;
+	}
+    }
+
     if(specifiedLoc && !specifiedScale){
 	cerr<<"Error: cannot specify --loc without --scale"<<endl;
 	return 1;
@@ -1010,6 +1017,10 @@ int main (int argc, char *argv[]) {
 
 	cerr<<"GC content: mean:"<<theoMeanGC<<" stdev:"<<theoStdvGC<<endl;
     }
+
+#ifdef DEBUG    
+    cerr<<"done computing mean GC "<<endl;
+#endif
 
 
 
