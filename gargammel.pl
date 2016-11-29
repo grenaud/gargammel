@@ -1086,6 +1086,10 @@ if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
     runcmd($cmd1);
 
     my $cmd2="".$fragsim." -tag e1 -n ".$numberOfFragmentsE2;
+
+    $cmd2 .= " -m ".$minsize." ";
+    $cmd2 .= " -M ".$maxsize." ";
+
     if (defined $filefragsize) {
       $cmd2 .= " -s ".$filefragsize." ";
     } else {
@@ -1107,6 +1111,8 @@ if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
 
     my $cmd1="".$fragsim." -tag e -n ".$numberOfFragmentsE1;
 
+    $cmd1 .= " -m ".$minsize." ";
+    $cmd1 .= " -M ".$maxsize." ";
 
     if (defined $misince) {
       $cmd1 .= " --comp ".$misince." ";
@@ -1141,6 +1147,8 @@ if ($#arrayofFilescont != -1 && $numberOfFragmentsC>0) {
   for (my $i=0;$i<=$#arrayofFilescont;$i++) {
     my $cmd1="".$fragsim." -tag c".($i+1)." -n ".$arrayofFilescontToExtract[$i];
 
+    $cmd1 .= " -m ".$minsize." ";
+    $cmd1 .= " -M ".$maxsize." ";
 
     if (defined $misincc) {
       $cmd1 .= " --comp ".$misincc." ";
@@ -1180,6 +1188,9 @@ if ($#arrayofFilescont != -1 && $numberOfFragmentsC>0) {
 if ($#arrayofFilesbact != -1 && $numberOfFragmentsB>0) {
   for (my $i=0;$i<=$#arrayofFilesbact;$i++) {
     my $cmd1="".$fragsim." -tag b".($i+1)." -n ".$arrayofFilesbactToExtract[$i];
+
+    $cmd1 .= " -m ".$minsize." ";
+    $cmd1 .= " -M ".$maxsize." ";
 
     if (defined $misincb) {
       $cmd1 .= " --comp ".$misincb." ";
