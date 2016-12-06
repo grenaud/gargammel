@@ -167,6 +167,8 @@ The first is from a  double-stranded library and the second a single-stranded on
     -mapdamage examplesMapDamage/results_LaBrana/misincorporation.txt double
     -mapdamage examplesMapDamage/results_Ust_Ishim/misincorporation.txt single
 
+We suggest that you run mapDamage on the empirical data that you are trying to emulate and use the resulting misincorporation.txt file.
+
 3. Specify a matrix of deamination rates, we use the following format, the first line is the header:
 
     	A->C	A->G	A->T	C->A	C->G	C->T	G->A	G->C	G->T	T->A	T->C	T->G
