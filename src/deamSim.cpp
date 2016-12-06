@@ -32,7 +32,16 @@ const uint32_t flagSecondPair  =141; // 10001101
 
 typedef struct { 
     double s[12];
- } substitutionRates;
+} substitutionRates;
+
+typedef struct { 
+    unsigned int  s[12];
+} substitutionRatesInt;
+
+
+typedef struct { 
+    unsigned int s[4];
+} baseCountInt;
 
 
 
@@ -76,10 +85,14 @@ int main (int argc, char *argv[]) {
     string matrixFile;
     bool   matrixFileSpecified=false;
 
+    string mapdamageFile;
+    bool   mapdamageFileSpecified=false;
+    string mapdamageProtocol;
+
     string matrix;
-    bool   matrixSpecified    =false;
-    bool singleDeam           =false;
-    bool doubleDeam           =false;
+    bool   matrixSpecified    = false;
+    bool   singleDeam         = false;
+    bool   doubleDeam         = false;
     
     const string usage=string("\t"+string(argv[0])+
                               " [options]  [fasta or BAM file]"+"\n\n"+
@@ -101,6 +114,13 @@ int main (int argc, char *argv[]) {
 			      +" Mandatory deamination options:\n"+ 
 			      "\tSpecify either:\n"+
 			      
+                              "\t\t"+"-mapdamage  [mis.txt] [protocol]" +"\t"+"Read the miscorporation file [mis.txt]"+"\n"+
+                              "\t\t"+"                               " +"\t\t"+"produced by mapDamage"+"\n"+
+                              "\t\t"+"                               " +"\t\t"+"[protocol] can be either \"single\" or \"double\" (without quotes)\n"+
+                              "\t\t"+"                               " +"\t\t"+"Single strand will have C->T damage on both ends"+"\n"+
+                              "\t\t"+"                               " +"\t\t"+"Double strand will have and C->T at the 5' end and G->A damage at the 3' end"+"\n"+
+			      "\n"+
+
                               "\t\t"+"-matfile  [matrix file prefix]" +"\t\t"+"Read the matrix file of substitutions instead of the default "+"\n"+
                               "\t\t"+"                               " +"\t\t"+"Provide the prefix only, both files must end with"+"\n"+
                               "\t\t"+"                               " +"\t\t"+"5.dat and 3.dat"+"\n"+
@@ -129,11 +149,11 @@ int main (int argc, char *argv[]) {
 
                               // "\t\t"+"                               " +"\t\t"+"\td: prob. of deamination of Cs in double-stranded parts"+"\n"+
 
-	    // dBrgs   = destringify<double>(temps[0]);
-	    // sBrgs5p = destringify<double>(temps[1]);
-	    // sBrgs3p = destringify<double>(temps[2]);
-	    // lBrgs5p = destringify<double>(temps[3]);
-	    // lBrgs3p = destringify<double>(temps[4]);
+			      // dBrgs   = destringify<double>(temps[0]);
+			      // sBrgs5p = destringify<double>(temps[1]);
+			      // sBrgs3p = destringify<double>(temps[2]);
+			      // lBrgs5p = destringify<double>(temps[3]);
+			      // lBrgs3p = destringify<double>(temps[4]);
 
 
                               "");
@@ -161,12 +181,12 @@ int main (int argc, char *argv[]) {
 	    if(matrix == "single"){
 		singleDeam=true;
 	    }else{
-	       if(matrix == "double" ){
-		   doubleDeam=true;
-	       }else{
-		cerr << "Specify either \"single\" or \"double\" (without quotes), you entered "<<matrix<<endl;
-		return 1;
-	       }
+		if(matrix == "double" ){
+		    doubleDeam=true;
+		}else{
+		    cerr << "Specify either \"single\" or \"double\" (without quotes), you entered "<<matrix<<endl;
+		    return 1;
+		}
 	    }
 
 	    matrixSpecified = true;
@@ -177,6 +197,21 @@ int main (int argc, char *argv[]) {
 	if(string(argv[i]) == "-matfile" ){
 	    matrixFile          = string(argv[i+1]);
 	    matrixFileSpecified = true;
+	    i++;
+	    continue;
+	}
+
+	if(string(argv[i]) == "-mapdamage" ){
+	    mapdamageFile          = string(argv[i+1]);
+	    mapdamageProtocol      = string(argv[i+2]);
+	    mapdamageFileSpecified = true;
+
+	    if(mapdamageProtocol != "single" &&
+	       mapdamageProtocol != "double" ){
+		cerr << "The protocol specified should be 'single' or 'double' without the quotes, got: "<<mapdamageProtocol<<endl;
+		return 1;		
+	    }
+	    i++;
 	    i++;
 	    continue;
 	}
@@ -271,12 +306,12 @@ int main (int argc, char *argv[]) {
         return 1;
     }
 
-    if(useBriggs && matrixSpecified){
+    if(useBriggs   && (matrixSpecified || mapdamageFileSpecified)){
         cerr<<"Error: cannot specify both a file and Briggs parameter model"<<endl;
         return 1;
     }
 
-    if(useBriggsss && matrixSpecified){
+    if(useBriggsss && (matrixSpecified || mapdamageFileSpecified)){
         cerr<<"Error: cannot specify both a file and Briggs parameter model"<<endl;
         return 1;
     }
@@ -286,10 +321,11 @@ int main (int argc, char *argv[]) {
         return 1;
     }
 
-    if(!useBriggs          && 
-       !useBriggsss        && 
-       !matrixSpecified    && 
-       !matrixFileSpecified){
+    if(!useBriggs           && 
+       !useBriggsss         && 
+       !matrixSpecified     && 
+       !matrixFileSpecified &&
+       !mapdamageFileSpecified){
     	cerr << "Please specify the matrix to use or use the Briggs parameter model"<<endl;
     	return 1;
     }
@@ -308,151 +344,369 @@ int main (int argc, char *argv[]) {
     // }
 
     if(!useBriggs && !useBriggsss){    
-	string deam5File;
-	string deam3File;
-	
-	if(matrixFileSpecified){
-	    deam5File = matrixFile+"5.dat";
-	    deam3File = matrixFile+"3.dat";	
-	}else{   
-	    deam5File = getCWD(argv[0])+ "matrices/"+matrix+"-5.dat";
-	    deam3File = getCWD(argv[0])+ "matrices/"+matrix+"-3.dat";	
-	}
-	
-	string line;
+	if(mapdamageFileSpecified){//we specified a mapDamage file
 
-	///////////////////////////////////////
-	//READ file with 5p deamination rates /
-	///////////////////////////////////////
-	igzstream deam5pFileSt;
+	    vector<substitutionRatesInt> subCount5p;
+	    vector<substitutionRatesInt> subCount3p;
 
-	deam5pFileSt.open(deam5File.c_str(), ios::in);
+	    vector<baseCountInt> baseCount5p;
+	    vector<baseCountInt> baseCount3p;
+	    bool first5p=true;
+	    bool first3p=true;
+	    string line;
+	    igzstream misincorpFileSt;
+
+	    misincorpFileSt.open(mapdamageFile.c_str(), ios::in);
 
 
-	if (deam5pFileSt.good()){
-	    //header
-	    if ( !getline (deam5pFileSt,line)){
-		cerr << "Parsing error for 5p deamination file "<<deam5File<<endl;
-		return 1;
-	    }
-
-	    while ( getline (deam5pFileSt,line)){
-		vector<string> fields = allTokens(line,'\t');
-		vector<string> firstFields;
-		for(unsigned int i=1;i<fields.size();i++){
-		    vector<string> fields2 = allTokens(fields[i],' ');
-		    firstFields.push_back(fields2[0]);
-		}
-	    
-		if(firstFields.size()!=12){
-		    cerr << "line from deamination does not have 12 fields "<<line<<" "<<firstFields.size()<<endl;
-		    return 1;
-		}
-	    
-		substitutionRates toadd;
-		for(unsigned int i=0;i<firstFields.size();i++){		
-		    toadd.s[i]=destringify<double>(firstFields[i]);
-#ifdef DEBUG
-		    cout<<sub5p.size()<<"\t"<<substiString[i]<<"\t"<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
-#endif
-		}	
-
-
-		for(int b=0;b<4;b++){		
-		    double sum =0.0;
-		    for(int a=0;a<3;a++){		
-			int idx = b*3+a;
-			sum+=toadd.s[idx];
-		    }
-		    if(sum>1.0){
-			cerr<<"Problem with line "<<line<<" in file "<<deam5File<<" the sum of the substitution probabilities exceeds 1"<<endl;
-			return 1;
-		    }
-		}
-
-		sub5p.push_back(toadd);
-		//return 1;
-	    }
-	
-	    deam5pFileSt.close();
-	}else{
-	    cerr << "Unable to open 5p deamination file "<<deam5File<<endl;
-	    return 1;
-	}
-
-
-	///////////////////////////////////////
-	//READ file with 3p deamination rates /
-	///////////////////////////////////////
-	igzstream deam3pFileSt;
-
-	deam3pFileSt.open(deam3File.c_str(), ios::in);
-
-
-	if (deam3pFileSt.good()){
-	    //header
-	    if ( !getline (deam3pFileSt,line)){
-		cerr << "Parsing error for 3p deamination file "<<deam3File<<endl;
-		return 1;
-	    }
-
-	    while ( getline (deam3pFileSt,line)){
-		vector<string> fields = allTokens(line,'\t');
-		vector<string> firstFields;
-		for(unsigned int i=1;i<fields.size();i++){
-		    vector<string> fields2 = allTokens(fields[i],' ');
-		    firstFields.push_back(fields2[0]);
-		}
-	    
-		if(firstFields.size()!=12){
-		    cerr << "line from deamination does not have 12 fields "<<line<<" "<<firstFields.size()<<endl;
-		    return 1;
-		}
-	    
-		substitutionRates toadd;
-		for(unsigned int i=0;i<firstFields.size();i++){		
-		    toadd.s[i]=destringify<double>(firstFields[i]);
-
-#ifdef DEBUG
-		    cout<<sub3p.size()<<"\t"<<substiString[i]<<"\t"<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
-#endif
-
-		    //cout<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
-		}	
-
-		for(int b=0;b<4;b++){		
-		    double sum =0.0;
-		    for(int a=0;a<3;a++){		
-			int idx = b*3+a;
-			sum+=toadd.s[idx];
-		    }
-		    if(sum>1.0){
-			cerr<<"Problem with line "<<line<<" in file "<<deam3File<<" the sum of the substitution probabilities exceeds 1"<<endl;
+	    if (misincorpFileSt.good()){
+		
+		//3 lines for header
+		for(int i=0;i<3;i++){
+		    if ( !getline (misincorpFileSt,line)){
+			cerr << "Parsing error for misincorporation file "<<mapdamageFile<<endl;
 			return 1;
 		    }
 		}
 		
+		if ( !getline (misincorpFileSt,line)){
+		    cerr << "Parsing error for misincorporation file "<<mapdamageFile<<endl;
+		    return 1;
+		}
 
+		int indexHeaderToTrueIndex [12];
+
+		vector<string> fieldsHeader = allTokens(line,'\t');
+		for(int i=0;i<12;i++){		    
+		    
+		    if( (fieldsHeader[9+i].size() != 3) || (fieldsHeader[9+i][1] != '>') ){
+			cerr << "Parsing error for misincorporation file "<<mapdamageFile<<" wrong header field "<<fieldsHeader[9+i]<<endl;
+			return 1;
+		    }
+
+		    int trueIndex=-1;
+		    if(fieldsHeader[9+i][0]     == 'A'){
+			if(fieldsHeader[9+i][2] == 'C')
+			    trueIndex=0;
+			if(fieldsHeader[9+i][2] == 'G')
+			    trueIndex=1; 
+			if(fieldsHeader[9+i][2] == 'T')
+			    trueIndex=2; 
+		    }else{
+			if(fieldsHeader[9+i][0]     == 'C'){
+			    if(fieldsHeader[9+i][2] == 'A')
+				trueIndex=3; 
+			    if(fieldsHeader[9+i][2] == 'G')
+				trueIndex=4;
+			    if(fieldsHeader[9+i][2] == 'T')
+				trueIndex=5;
+			}else{
+			    if(fieldsHeader[9+i][0]     == 'G'){
+				if(fieldsHeader[9+i][2] == 'A')
+				    trueIndex=6;
+				if(fieldsHeader[9+i][2] == 'C')
+				    trueIndex=7; 
+				if(fieldsHeader[9+i][2] == 'T')
+				    trueIndex=8;
+			    }else{
+				if(fieldsHeader[9+i][0]     == 'T'){
+				    if(fieldsHeader[9+i][2] == 'A')
+					trueIndex=9; 
+				    if(fieldsHeader[9+i][2] == 'C')
+					trueIndex=10; 
+				    if(fieldsHeader[9+i][2] == 'G')
+					trueIndex=11; 
+				}else{
+				    cerr << "Parsing error for misincorporation file "<<mapdamageFile<<endl; return 1;
+				}
+			    }
+			}
+		    }
+		    if(trueIndex==-1){
+			cerr << "Parsing error for misincorporation file "<<mapdamageFile<<endl; return 1;
+		    }
+		    indexHeaderToTrueIndex[i] = trueIndex;
+		    //cout<<i<<"\t"<<trueIndex<<"\t"<<fieldsHeader[9+i]<<endl;
+		}
+
+		
+		while ( getline (misincorpFileSt,line)){
+		    vector<string> fields = allTokens(line,'\t');
+
+		    //3prime end
+		    if(fields[1] == "3p"){
+			if( first3p && (fields[2] == "-") ){
+			    first3p=false;
+			}
+			
+			if(first3p){//first iteration
+			    substitutionRatesInt sub;
+			    baseCountInt         bsc;
+			    for(int i=0;i<4;i++)
+				bsc.s[i] = destringify<unsigned int>(fields[4+i]);
+
+			    for(int i=0;i<12;i++){
+				// cout<<i<<" "<<indexHeaderToTrueIndex[i]<<endl;
+				sub.s[ indexHeaderToTrueIndex[i] ] = destringify<unsigned int>(fields[9+i]);
+			    }
+			    subCount3p.push_back( sub);
+			    baseCount3p.push_back(bsc);
+			}else{
+			    int indexToUse = destringify<int>(fields[3])-1;
+			    
+			    for(int i=0;i<4;i++)
+				baseCount3p[indexToUse].s[i] += destringify<unsigned int>(fields[4+i]);
+			    
+			    for(int i=0;i<12;i++)
+				subCount3p[ indexToUse].s[ indexHeaderToTrueIndex[i] ] += destringify<unsigned int>(fields[9+i]);
+			}
+			continue;
+		    }
+
+
+
+		    //5prime end
+		    if(fields[1] == "5p"){
+			if( first5p && (fields[2] == "-") ){
+			    first5p=false;
+			}
+			
+			if(first5p){//first iteration
+			    substitutionRatesInt sub;
+			    baseCountInt         bsc;
+			    for(int i=0;i<4;i++)
+				bsc.s[i] = destringify<unsigned int>(fields[4+i]);
+
+			    for(int i=0;i<12;i++)
+				sub.s[ indexHeaderToTrueIndex[i] ] = destringify<unsigned int>(fields[9+i]);
+			
+			    subCount5p.push_back( sub);
+			    baseCount5p.push_back(bsc);
+			}else{
+			    int indexToUse = destringify<int>(fields[3])-1;
+			    
+			    for(int i=0;i<4;i++)
+				baseCount5p[ indexToUse].s[i] += destringify<unsigned int>(fields[4+i]);
+
+			    for(int i=0;i<12;i++)
+				subCount5p[indexToUse].s[ indexHeaderToTrueIndex[i] ]   += destringify<unsigned int>(fields[9+i]);
+			}
+			continue;
+		    }
+
+		    //error if not 5p or 3p
+		    cerr << "line from misincorporation.txt does not have a 5p or 3p in the 2nd column: "<<line<<endl;
+		    return 1;
+
+		    
+		    
+		}//end for getline for each line
+		
+	    }else{//if not good
+		cerr << "Unable to open misincorporation file "<<mapdamageFile<<endl;
+		return 1;
+	    }
+
+	    if(subCount5p.size() != subCount3p.size()){
+		cerr << "Error in misincorporation file "<<mapdamageFile<<" the number of defined bases for the 5' and 3' ends differ"<<endl;
+		return 1;
+	    }
+
+	    //compute actual substitutions 
+	    for(unsigned int i=0;i<subCount5p.size();i++){
+		substitutionRates toadd;
+		for(int b=0;b<4;b++){				    
+		    for(int a=0;a<3;a++){		
+			int idx = b*3+a;
+			toadd.s[idx] = double(subCount5p[i].s[idx]) / double(baseCount5p[i].s[b]);
+			// cout<<i<<" "<<idx<<" "<<subCount5p[i].s[idx]<<" "<<baseCount5p[i].s[b]<<endl;
+		    }		    
+		}
+
+		sub5p.push_back(toadd);
+#ifdef DEBUG
+		cout<<i<<"\t";
+		for(unsigned int k=0;k<12;k++)
+		    cout<<sub5p[i].s[k]<<" ";
+		cout<<endl;
+#endif
+	    }
+
+	    for(unsigned int i=0;i<subCount3p.size();i++){
+		substitutionRates toadd;
+		for(int b=0;b<4;b++){				    
+		    for(int a=0;a<3;a++){		
+			int idx = b*3+a;
+			toadd.s[idx] = double(subCount3p[i].s[idx]) / double(baseCount3p[i].s[b]);
+		    }		    
+		}
 		sub3p.push_back(toadd);
-		//return 1;
+
+#ifdef DEBUG
+		cout<<i<<"\t";
+		for(unsigned int k=0;k<12;k++)
+		    cout<<sub3p[i].s[k]<<" ";
+		cout<<endl;
+#endif
+
+	    }
+	    // return 1;
+	    matrixSpecified=true; //fake a .dat file
+	    if(mapdamageProtocol == "single" ){
+		singleDeam=true;
+	    }
+	    
+	    if(mapdamageProtocol == "double" ){
+		doubleDeam=true;
+	    }
+	    
+	}else{//else, we specify a .dat matrix
+	    string deam5File;
+	    string deam3File;
+	
+	    if(matrixFileSpecified){
+		deam5File = matrixFile+"5.dat";
+		deam3File = matrixFile+"3.dat";	
+	    }else{   
+		deam5File = getCWD(argv[0])+ "matrices/"+matrix+"-5.dat";
+		deam3File = getCWD(argv[0])+ "matrices/"+matrix+"-3.dat";	
 	    }
 	
-	    deam3pFileSt.close();
-	}else{
-	    cerr << "Unable to open 3p deamination file "<<deam3File<<endl;
-	    return 1;
-	}
+	    string line;
 
-	// for(unsigned int i=0;i<sub3p.size();i++){		
-	// 	cout<<i<<"\t"<<arrayToString(sub3p[i].s,12,"\t")<<endl;
-	// }
-	reverse(sub3p.begin(),sub3p.end());
+	    ///////////////////////////////////////
+	    //READ file with 5p deamination rates /
+	    ///////////////////////////////////////
+	    igzstream deam5pFileSt;
+
+	    deam5pFileSt.open(deam5File.c_str(), ios::in);
+
+
+	    if (deam5pFileSt.good()){
+		//header
+		if ( !getline (deam5pFileSt,line)){
+		    cerr << "Parsing error for 5p deamination file "<<deam5File<<endl;
+		    return 1;
+		}
+
+		while ( getline (deam5pFileSt,line)){
+		    vector<string> fields = allTokens(line,'\t');
+		    vector<string> firstFields;
+		    for(unsigned int i=1;i<fields.size();i++){
+			vector<string> fields2 = allTokens(fields[i],' ');
+			firstFields.push_back(fields2[0]);
+		    }
+	    
+		    if(firstFields.size()!=12){
+			cerr << "line from deamination does not have 12 fields "<<line<<" "<<firstFields.size()<<endl;
+			return 1;
+		    }
+	    
+		    substitutionRates toadd;
+		    for(unsigned int i=0;i<firstFields.size();i++){		
+			toadd.s[i]=destringify<double>(firstFields[i]);
+#ifdef DEBUG
+			cout<<sub5p.size()<<"\t"<<substiString[i]<<"\t"<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
+#endif
+		    }	
+
+
+		    for(int b=0;b<4;b++){		
+			double sum =0.0;
+			for(int a=0;a<3;a++){		
+			    int idx = b*3+a;
+			    sum+=toadd.s[idx];
+			}
+			if(sum>1.0){
+			    cerr<<"Problem with line "<<line<<" in file "<<deam5File<<" the sum of the substitution probabilities exceeds 1"<<endl;
+			    return 1;
+			}
+		    }
+
+		    sub5p.push_back(toadd);
+		    //return 1;
+		}
 	
-	// for(unsigned int i=0;i<sub3p.size();i++){		
-	// 	cout<<i<<"\t"<<arrayToString(sub3p[i].s,12,"\t")<<endl;
-	// }
+		deam5pFileSt.close();
+	    }else{
+		cerr << "Unable to open 5p deamination file "<<deam5File<<endl;
+		return 1;
+	    }
+
+
+	    ///////////////////////////////////////
+	    //READ file with 3p deamination rates /
+	    ///////////////////////////////////////
+	    igzstream deam3pFileSt;
+
+	    deam3pFileSt.open(deam3File.c_str(), ios::in);
+
+
+	    if (deam3pFileSt.good()){
+		//header
+		if ( !getline (deam3pFileSt,line)){
+		    cerr << "Parsing error for 3p deamination file "<<deam3File<<endl;
+		    return 1;
+		}
+
+		while ( getline (deam3pFileSt,line)){
+		    vector<string> fields = allTokens(line,'\t');
+		    vector<string> firstFields;
+		    for(unsigned int i=1;i<fields.size();i++){
+			vector<string> fields2 = allTokens(fields[i],' ');
+			firstFields.push_back(fields2[0]);
+		    }
+	    
+		    if(firstFields.size()!=12){
+			cerr << "line from deamination does not have 12 fields "<<line<<" "<<firstFields.size()<<endl;
+			return 1;
+		    }
+	    
+		    substitutionRates toadd;
+		    for(unsigned int i=0;i<firstFields.size();i++){		
+			toadd.s[i]=destringify<double>(firstFields[i]);
+
+#ifdef DEBUG
+			cout<<sub3p.size()<<"\t"<<substiString[i]<<"\t"<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
+#endif
+
+			//cout<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
+		    }	
+
+		    for(int b=0;b<4;b++){		
+			double sum =0.0;
+			for(int a=0;a<3;a++){		
+			    int idx = b*3+a;
+			    sum+=toadd.s[idx];
+			}
+			if(sum>1.0){
+			    cerr<<"Problem with line "<<line<<" in file "<<deam3File<<" the sum of the substitution probabilities exceeds 1"<<endl;
+			    return 1;
+			}
+		    }
+		
+
+		    sub3p.push_back(toadd);
+		    //return 1;
+		}
+	
+		deam3pFileSt.close();
+	    }else{
+		cerr << "Unable to open 3p deamination file "<<deam3File<<endl;
+		return 1;
+	    }
+
+	    // for(unsigned int i=0;i<sub3p.size();i++){		
+	    // 	cout<<i<<"\t"<<arrayToString(sub3p[i].s,12,"\t")<<endl;
+	    // }
+	    reverse(sub3p.begin(),sub3p.end());
+	
+	    // for(unsigned int i=0;i<sub3p.size();i++){		
+	    // 	cout<<i<<"\t"<<arrayToString(sub3p[i].s,12,"\t")<<endl;
+	    // }
+	}
     }else{
-	//cerr<<"test"<<endl;
+	//no file to read
     }
 
     //Fastq
@@ -670,7 +924,7 @@ int main (int argc, char *argv[]) {
 
 	    
 
-	}else{
+	}else{//not briggs single strand
 
 	    if(useBriggs){
 		int overhang5p=overhang(generator);

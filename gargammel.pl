@@ -276,9 +276,17 @@ sub usage
   " ===================\n".
   " To add deamination to the bacterial and endogenous material,you can specify\n".
   " either one of these options:\n".
+
+  "\t-mapdamage\t[mis.txt] [protocol]\tRead the miscorporation file [mis.txt]
+                           	       produced by mapDamage
+		                       [protocol] can be either \"single\" or \"double\" (without quotes)
+		                       Single strand will have C->T damage on both ends
+		                       Double strand will have and C->T at the 5' end and G->A damage at the 3' end".
+
   "\t-matfile\t[matrix file prefix]\tRead the matrix file of substitutions
 		                                Provide the prefix only, both files must end with
 		                               	5.dat and 3.dat\n".
+
   "\t-damage\t\t[v,l,d,s]	  \tFor the Briggs et al. 2007 model
 		                  \t\tThe parameters must be comma-separated e.g.: -damage 0.03,0.4,0.01,0.3
 		                  \t\t\tv: nick frequency
@@ -289,12 +297,19 @@ sub usage
   "\n".
   " Alternatively, you can specify these options independently for the endogenous (e), bacterial (b)\n".
   " and present-day human contaminant (c) using the following options:\n".
+
+  "\t-mapdamagee\t[mis.txt] [protocol]\tEndogenous mapDamage misincorporation file\n".
   "\t-matfilee\t[matrix file prefix]\tEndogenous matrix file of substitutions\n".
   "\t-damagee\t[v,l,d,s]	  \tEndogenous Briggs parameters\n".
+
+  "\t-mapdamageb\t[mis.txt] [protocol]\tBacterial mapDamage misincorporation file\n".
   "\t-matfileb\t[matrix file prefix]\tBacterial matrix file of substitutions\n".
   "\t-damageb\t[v,l,d,s]	  \tBacterial Briggs parameters\n".
+
+  "\t-mapdamagec\t[mis.txt] [protocol]\tHuman contaminant mapDamage misincorporation file\n".
   "\t-matfilec\t[matrix file prefix]\tHuman contaminant matrix file of substitutions\n".
   "\t-damagecd\t[v,l,d,s]	  \tHuman contaminant Briggs parameters\n".
+
   "\n please note that if you do specify deamination for one source but not for another, no deamination will be added\n".
 
 
@@ -341,12 +356,20 @@ my $misince;
 my $misincb;
 my $misincc;
 
+
+my @mapdamage;
 my $matfile;
 my $briggs;
+
+my @mapdamagee;
 my $matfilee;
 my $briggse;
+
+my @mapdamageb;
 my $matfileb;
 my $briggsb;
+
+my @mapdamagec;
 my $matfilec;
 my $briggsc;
 
@@ -360,7 +383,7 @@ my $sa;
 my $rl;
 
 usage() if ( @ARGV < 1 or
-	     ! GetOptions('help|?' => \$help, 'mock' => \$mock, 'se' => \$se, 'ss=s' => \$ss, 'distmis=i' => \$distmis, 'misince=s' => \$misince,'misincb=s' => \$misincb,'misincc=s' => \$misincc, 'comp=s' => \$comp, 'matfile=s' => \$matfile, 'briggs=s' => \$briggs,'matfilee=s' => \$matfilee, 'briggse=s' => \$briggse,'matfileb=s' => \$matfileb, 'briggsb=s' => \$briggsb,'matfilec=s' => \$matfilec, 'briggsc=s' => \$briggsc,'o=s' => \$outputprefix, 'n=i' => \$numberOfFragments,'l=i' => \$fraglength, 's=s' => \$filefragsize, 'f=s' => \$filefragfreqsize, 'loc=s' => \$loc, 'fa=s' => \$fa, 'sa=s' => \$sa, 'rl=s' => \$rl, 'scale=s' => \$scale, 'c=f' => \$coverage, 'minsize=i' => \$minsize,'maxsize=i' => \$maxsize)
+	     ! GetOptions('help|?' => \$help, 'mock' => \$mock, 'se' => \$se, 'ss=s' => \$ss, 'distmis=i' => \$distmis, 'misince=s' => \$misince,'misincb=s' => \$misincb,'misincc=s' => \$misincc, 'comp=s' => \$comp,'mapdamage=s{2}' => \@mapdamage, 'mapdamagee=s{2}' => \@mapdamagee, 'mapdamageb=s{2}' => \@mapdamageb, 'mapdamagec=s{2}' => \@mapdamagec,'matfile=s' => \$matfile, 'briggs=s' => \$briggs,'matfilee=s' => \$matfilee, 'briggse=s' => \$briggse,'matfileb=s' => \$matfileb, 'briggsb=s' => \$briggsb,'matfilec=s' => \$matfilec, 'briggsc=s' => \$briggsc,'o=s' => \$outputprefix, 'n=i' => \$numberOfFragments,'l=i' => \$fraglength, 's=s' => \$filefragsize, 'f=s' => \$filefragfreqsize, 'loc=s' => \$loc, 'fa=s' => \$fa, 'sa=s' => \$sa, 'rl=s' => \$rl, 'scale=s' => \$scale, 'c=f' => \$coverage, 'minsize=i' => \$minsize,'maxsize=i' => \$maxsize)
           or defined $help );
 
 if( !(defined $ss) ){
@@ -473,8 +496,9 @@ checkDeamParam($briggsc,$matfilec);
 
 
 
-if ( (defined $matfile) ||
-     (defined $briggs )  ) {
+if ( (defined $matfile   ) ||
+     (defined $briggs    ) ||
+     (@mapdamage ) ) {
 
   if ( (defined $matfilee) ||
        (defined $briggse )  ) {
@@ -500,6 +524,12 @@ if ( (defined $matfile) ||
   if(defined $briggs){
     $briggse = $briggs;
     $briggsb = $briggs;
+  }
+
+
+  if(@mapdamage){
+    @mapdamagee = @mapdamage;
+    @mapdamageb = @mapdamage;
   }
 
 
@@ -955,7 +985,6 @@ if($numberOfFragmentsB>0){
     print STDERR "P[".(' 'x($maxsizeFilename-length($arrayofFilesbactLFromList[$i]))).$arrayofFilesbactLFromList[$i]."] = ".$arrayofFilesbactLFromListW[$i]."\n";
   }
 
-
 }
 
 if (0) {
@@ -1232,7 +1261,9 @@ if ($#arrayofFilesbact != -1 && $numberOfFragmentsB>0) {
 #endogenous
 if( (defined $matfilee)
     ||
-    (defined $briggse) ){
+    (defined $briggse)
+    ||
+    (@mapdamagee) ){
 
   my $cmde="".$deamsim." ";
   if( (defined $matfilee) ){
@@ -1241,6 +1272,10 @@ if( (defined $matfilee)
 
   if( (defined $briggse) ){
     $cmde .= " -damage ".$briggse." ";
+  }
+
+  if( (@mapdamagee) ){
+    $cmde .= " -mapdamage ".$mapdamagee[0]." ".$mapdamagee[1]." ";
   }
 
   $cmde.=" ".$outputprefix.".e.fa.gz  | gzip > ".$outputprefix."_d.fa.gz";
@@ -1257,7 +1292,9 @@ if( (defined $matfilee)
 #bacteria
 if( (defined $matfileb)
     ||
-    (defined $briggsb) ){
+    (defined $briggsb)
+    ||
+    (@mapdamageb) ){
 
   my $cmdb="".$deamsim." ";
   if( (defined $matfileb) ){
@@ -1266,6 +1303,10 @@ if( (defined $matfileb)
 
   if( (defined $briggsb) ){
     $cmdb .= " -damage ".$briggsb." ";
+  }
+
+  if( (@mapdamageb) ){
+    $cmdb .= " -mapdamage ".$mapdamageb[0]." ".$mapdamageb[1]." ";
   }
 
   $cmdb.=" ".$outputprefix.".b.fa.gz  |gzip >> ".$outputprefix."_d.fa.gz";
@@ -1288,7 +1329,9 @@ if( (defined $matfileb)
 #human cont.
 if( (defined $matfilec)
     ||
-    (defined $briggsc) ){
+    (defined $briggsc)
+    ||
+    (@mapdamagec) ){
 
   my $cmdc="".$deamsim." ";
   if( (defined $matfilec) ){
@@ -1297,6 +1340,10 @@ if( (defined $matfilec)
 
   if( (defined $briggsc) ){
     $cmdc .= " -damage ".$briggsc." ";
+  }
+
+  if( (@mapdamagec) ){
+    $cmdc .= " -mapdamage ".$mapdamagec[0]." ".$mapdamagec[1]." ";
   }
 
   $cmdc.=" ".$outputprefix.".c.fa.gz  |gzip >> ".$outputprefix."_d.fa.gz";

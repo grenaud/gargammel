@@ -8,12 +8,13 @@ our program can also simulate various levels of present-day human contamination 
 The website for gargammel can be found here: https://grenaud.github.io/gargammel/
 
 
-Questions/feature requests :
+Questions/bug report/feature requests :
 -------------------------------------------------------------------------------------
 
 	contact: Gabriel Renaud   
 	email:	 gabriel [dot] reno [ at sign ] gmail.com
 
+I accept pull request for novel features.
 
 Downloading:
 -------------------------------------------------------------------------------------
@@ -100,7 +101,7 @@ Then we will create the aDNA fragments:
     cd ..
     ./gargammel.pl -c 3  --comp 0,0.08,0.92 -f src/sizefreq.size.gz  -matfile src/matrices/single-  -o data/simulation data/
 
-This will simulate a dataset with 8% human contamination. The deamination rate that will be used will follow a single-strand deamination using the empirical rates measured from the Loschbour individual from:
+This will simulate a dataset with 8% human contamination. The rate of misincorporation due to deamination that will be used will follow a single-strand deamination using the empirical rates measured from the Loschbour individual from:
 
     Lazaridis, Iosif, et al. "Ancient human genomes suggest three ancestral populations for present-day Europeans." Nature 513.7518 (2014): 409-413.
 
@@ -155,7 +156,18 @@ Specifying damage/deamination:
 If you use gargammel.pl or deamSim, you can speficiy deamination/damage using either:
 
 1. Use Briggs model parametes (see Briggs, Adrian W., et al. "Patterns of damage in genomic DNA sequences from a Neandertal." Proceedings of the National Academy of Sciences 104.37 (2007): 14616-14621.)
-2. Specify a matrix of deamination rates, we use the following format, the first line is the header:
+
+2. Use a misincorporation matrix computed by mapDamage (https://ginolhac.github.io/mapDamage). This matrix is in the results directory created by mapDamage and is called "misincorporation.txt". There are 2 examples of such files:
+
+    examplesMapDamage/results_LaBrana/misincorporation.txt
+    examplesMapDamage/results_Ust_Ishim/misincorporation.txt
+
+The first is from a  double-stranded library and the second a single-stranded one. To use either, you can use the wrapper script or deamSim as such:
+
+    -mapdamage examplesMapDamage/results_LaBrana/misincorporation.txt double
+    -mapdamage examplesMapDamage/results_Ust_Ishim/misincorporation.txt single
+
+3. Specify a matrix of deamination rates, we use the following format, the first line is the header:
 
     	A->C	A->G	A->T	C->A	C->G	C->T	G->A	G->C	G->T	T->A	T->C	T->G
     	pos	rate_{A->C}	rate_{A->G}	rate_{A->T}	rate_{C->A}	rate_{C->G}	rate_{C->T}	rate_{G->A}	rate_{G->C}	rate_{G->T}	rate_{T->A}	rate_{T->C}	rate_{T->G}
@@ -170,15 +182,21 @@ example of a format:
 
 This follows the output of https://bitbucket.org/ustenzel/damage-patterns.git
 
-3. You can use one of the precalculated rates of deamination in src/matrices/. There is a damage from single-strand and a double-strand libraries from the following study: 
+4. You can use one of the precalculated rates of deamination in src/matrices/. There is a damage from single-strand and a double-strand libraries from the following study: 
 
     Lazaridis, Iosif, et al. "Ancient human genomes suggest three ancestral populations for present-day Europeans." Nature 513.7518 (2014): 409-413.
 
 
-How can I get an ancient misincorporation profile for gargammel?
+Can I specify different rates of misincorporation due to deamination for the endogenous/bacterial/human contaminant sources?
 -------------------------------------------------------------------------------------
 
-You could generate it manually, the format is as follows:
+Yes, please refer to the options of the wrapper script gargammel.pl
+
+
+How can I get an ancient DNA composition profile for gargammel?
+-------------------------------------------------------------------------------------
+
+By composition we mean the base frequency at the breaks. You could generate it manually, the format is as follows:
 
     # comment
     Chr	End	Std	Pos	A	C	G	T	Total
@@ -203,7 +221,7 @@ The lines above specify the base count close +/- 4 bases to the 3p end for fragm
 
 Such a file can be generated using mapDamage2.0: 
 
-	Jónsson, Hákon, et al. "mapDamage2.0: fast approximate Bayesian estimates of ancient DNA damage parameters." Bioinformatics (2013): btt193.
+	Jonsson, Hakon, et al. "mapDamage2.0: fast approximate Bayesian estimates of ancient DNA damage parameters." Bioinformatics (2013): btt193.
 
 It is normally called "dnacomp.txt" in the output directory, you can filter a single chromosome (in this case 21) using this command:
 
@@ -243,6 +261,8 @@ Ancient DNA molecules tend to be fragmented and can be very short but tend to ha
 50	0.0204323
 ------------
 4) Specify the size distribution using parameters from a log-normal distribution, using options --loc and --scale.
+
+
 
 How can I get parameters for the size distribution?
 -------------------------------------------------------------------------------------
