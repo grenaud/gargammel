@@ -234,7 +234,9 @@ How can I specify the size distribution?
 -------------------------------------------------------------------------------------
 
 Ancient DNA molecules tend to be fragmented and can be very short but tend to have a specific shape. Both for the wrapper script (gargammel.pl) and the fragment simulation program (fragSim), there are are 4 ways to specifiy the :
+
 1) Specify a fixed length using -l 
+------------
 2) Open a file containing the size distribution using -s, one empirical fragment length per line eg:
 ------------
 ~~~~
