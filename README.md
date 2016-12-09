@@ -233,7 +233,7 @@ It is normally called "dnacomp.txt" in the output directory, you can filter a si
 How can I specify the size distribution?
 -------------------------------------------------------------------------------------
 
-Ancient DNA molecules tend to be fragmented and can be very short but tend to have a specific shape. Both for the wrapper script (gargammel.pl) and the fragment simulation program (fragSim), there are are 4 ways to specifiy the :
+Ancient DNA molecules tend to be fragmented and can be very short but tend to have a specific shape. Both for the wrapper script (gargammel.pl) and the fragment simulation program (fragSim), there are are 4 ways to specify the :
 
 1) Specify a fixed length using -l 
 ------------
