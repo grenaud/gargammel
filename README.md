@@ -237,6 +237,7 @@ Ancient DNA molecules tend to be fragmented and can be very short but tend to ha
 
 1) Specify a fixed length using -l 
 ------------
+
 2) Open a file containing the size distribution using -s, one empirical fragment length per line eg:
 ------------
 ~~~~
@@ -271,6 +272,7 @@ Ancient DNA molecules tend to be fragmented and can be very short but tend to ha
 ------------
 4) Specify the size distribution using parameters from a log-normal distribution, using options --loc and --scale.
 
+------------
 
 
 How can I get parameters for the size distribution?
