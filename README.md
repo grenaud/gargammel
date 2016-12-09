@@ -271,7 +271,6 @@ Ancient DNA molecules tend to be fragmented and can be very short but tend to ha
 
 ------------
 4) Specify the size distribution using parameters from a log-normal distribution, using options --loc and --scale.
-
 ------------
 
 
