@@ -198,7 +198,10 @@ my $pathdir = join("/",@arraycwd);
 my $adptsim = $pathdir."/src/adptSim";
 my $deamsim = $pathdir."/src/deamSim";
 my $fragsim = $pathdir."/src/fragSim";
-my $artprog = $pathdir."/art_src_MountRainier_Linux/art_illumina";
+my $artprog = $pathdir."/art_src_MountRainier/art_illumina";
+
+
+
 
 
 fileExists($adptsim);

@@ -296,8 +296,7 @@ You can change the header to suit the version of R that you have.
 Bacterial databases:
 -------------------------------------------------------------------------------------
 
-
-For the input/bact/ directory which represent the microbial contamination, gargammel needs a set of fasta files that represent the different microbes. Each file corresponds to exactly one microbial species. Each fasta file must contain the genome of the microbial species, multiple scaffolds and plasmids are allowed. Each fasta file must also be faidx indexed. This directory must also contain a file called "list".  This file contains the list of every fasta files in that directory along with their relative abundance in the desired bacterial contamination. For example:
+For the input/bact/ directory which represent the microbial contamination, gargammel needs a set of fasta files that represent the different microbes. **Each file corresponds to exactly one microbial species.** Each fasta file must contain the genome of the microbial species, multiple scaffolds and plasmids are allowed. Each fasta file must also be faidx indexed. This directory must also contain a file called "list".  This file contains the list of every fasta files in that directory along with their relative abundance in the desired bacterial contamination. For example:
 
     bacteria1.fa	0.5
     bacteria2.fa	0.3

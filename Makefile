@@ -1,8 +1,9 @@
 SHELL := /bin/bash
 
 
+OS := $(shell uname)
 
-all: 	src/fragSim src/deamSim src/adptSim src/fasta2fastas art_src_MountRainier_Linux/art_illumina_src/art_illumina.o
+all: 	src/fragSim src/deamSim src/adptSim src/fasta2fastas art_src_MountRainier/art_illumina_src/art_illumina.o
 
 src/fragSim: libgab/utils.o bamtools/lib/libbamtools.so
 	make -C src
@@ -30,11 +31,19 @@ bamtools/src/api/BamAlignment.h:
 bamtools/lib/libbamtools.so: bamtools/src/api/BamAlignment.h
 	cd bamtools/ && mkdir -p build/  && cd build/ && cmake .. && make && cd ../..
 
-art_src_MountRainier_Linux/art_illumina_src/art_illumina.o: #todo: add wget after rm 
-	rm -rf art_src_MountRainier_Linux/ artsrcmountrainier20160605linuxtgz.tgz
+art_src_MountRainier/art_illumina_src/art_illumina.o: #todo: add wget after rm 
+	rm -rf art_src_MountRainier/ art_src_MountRainier_Linux/ art_src_MountRainier_MacOS/ artsrcmountrainier20160605linuxtgz.tgz artsrcmountrainier20160605macostgz.tgz
+ifeq ($(OS),Darwin)
+	wget http://www.niehs.nih.gov/research/resources/assets/docs/artsrcmountrainier20160605macostgz.tgz
+	tar xvfz artsrcmountrainier20160605macostgz.tgz
+	cd art_src_MountRainier_MacOS/ && ./configure && make && cd ..
+	ln -s art_src_MountRainier_MacOS  art_src_MountRainier
+else
 	wget http://www.niehs.nih.gov/research/resources/assets/docs/artsrcmountrainier20160605linuxtgz.tgz
 	tar xvfz artsrcmountrainier20160605linuxtgz.tgz
 	cd art_src_MountRainier_Linux/ && ./configure && make && cd ..
+	ln -s art_src_MountRainier_Linux  art_src_MountRainier
+endif
 
 bacterialex:
 	mkdir -p bactDBexample
