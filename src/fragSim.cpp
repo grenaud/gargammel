@@ -1094,7 +1094,7 @@ int main (int argc, char *argv[]) {
 		
 		double p          =  randomProb();
 		double cProbLower =  0.0;
-		bool foundL        =  true;
+		bool foundL        =  false;
 		unsigned int indexFoundL=-1;
 		for(unsigned int i=0;i<fragLengthFreq.size();i++){
 		    if(cProbLower <=  p 
@@ -1449,7 +1449,7 @@ int main (int argc, char *argv[]) {
 	}
 
 	if( (f-1)%100000 == 0 && (f-1)!=0){
-	    cerr<<"Produced "<<(f-1)<<" sequences"<<endl;
+	    cerr<<"Produced "<<thousandSeparator(f-1)<<" out of "<< thousandSeparator(nFragments) <<" sequences"<<endl;
 	}
 
     }
