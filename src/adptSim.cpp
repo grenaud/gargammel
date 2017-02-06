@@ -412,7 +412,7 @@ int main (int argc, char *argv[]) {
 	}
 
 	if(f%100000 == 0 && f!=0){
-	    cerr<<"Produced "<<f<<" sequences"<<endl;
+	    cerr<<"Produced "<<thousandSeparator(f)<<endl;
 	}
 	f++;
 	

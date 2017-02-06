@@ -94,9 +94,8 @@ sub runcmdforce{
     die "system  cmd $cmdtorun failed: $?"
   } else {
   }
-
-
 }
+
 
 
 
@@ -190,6 +189,15 @@ sub fileExists{
 }
 
 
+sub isZipped{
+  my ($fileToTest) = @_;
+  if(runcmdReturnOutput("gzip -t ".$fileToTest) eq "0"){
+    return 1;
+  }else{
+    return 0;
+  }
+}
+
 
 my @arraycwd=split("/",abs_path($0));
 pop(@arraycwd);
@@ -218,6 +226,10 @@ my $adapterF="AGATCGGAAGAGCACACGTCTGAACTCCAGTCACCGATTCGATCTCGTATGCCGTCTTCTGCTTG"
 my $adapterR="AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTAGATCTCGGTGGTCGCCGTATCATTT";
 my $readlength=75;
 my $distmis=1;
+
+my $qs =0;
+my $qs2=0;
+
 
 sub usage
 {
@@ -323,6 +335,13 @@ sub usage
 	-sa	[seq]			\tAdapter that is observed after the reverse read (Default: ".substr($adapterR,0,10)."...)
 	-rl	[length]		\tDesired read length  (Default: ".$readlength.")
 	-se                             \tuse single-end sequencing (Default: paired-end)
+
+                                        \tThe following options change the sequencing error rate, please note that positive factor
+                                        \twill decrease the rate of such errors and a negative one will increase it.
+        -qs     [factor]                \tIncrease error rate for forward reads by a factor of 1/(10^([factor]/10)) (Default: ".$qs.")
+        -qs2    [factor]                \tIncrease error rate for reverse reads by a factor of 1/(10^([factor]/10)) (Default: ".$qs2.")
+
+
 	-ss     [system]                \tIllumina platfrom to use, the parentheses indicate the max. read length
 	                                \tuse the shorthand in the left column:
                                                                         (single-end, paired-end)
@@ -386,7 +405,7 @@ my $sa;
 my $rl;
 
 usage() if ( @ARGV < 1 or
-	     ! GetOptions('help|?' => \$help, 'mock' => \$mock, 'se' => \$se, 'ss=s' => \$ss, 'distmis=i' => \$distmis, 'misince=s' => \$misince,'misincb=s' => \$misincb,'misincc=s' => \$misincc, 'comp=s' => \$comp,'mapdamage=s{2}' => \@mapdamage, 'mapdamagee=s{2}' => \@mapdamagee, 'mapdamageb=s{2}' => \@mapdamageb, 'mapdamagec=s{2}' => \@mapdamagec,'matfile=s' => \$matfile, 'briggs=s' => \$briggs,'matfilee=s' => \$matfilee, 'briggse=s' => \$briggse,'matfileb=s' => \$matfileb, 'briggsb=s' => \$briggsb,'matfilec=s' => \$matfilec, 'briggsc=s' => \$briggsc,'o=s' => \$outputprefix, 'n=i' => \$numberOfFragments,'l=i' => \$fraglength, 's=s' => \$filefragsize, 'f=s' => \$filefragfreqsize, 'loc=s' => \$loc, 'fa=s' => \$fa, 'sa=s' => \$sa, 'rl=s' => \$rl, 'scale=s' => \$scale, 'c=f' => \$coverage, 'minsize=i' => \$minsize,'maxsize=i' => \$maxsize)
+	     ! GetOptions('help|?' => \$help, 'mock' => \$mock, 'se' => \$se, 'ss=s' => \$ss, 'distmis=i' => \$distmis, 'misince=s' => \$misince,'misincb=s' => \$misincb,'misincc=s' => \$misincc, 'comp=s' => \$comp,'mapdamage=s{2}' => \@mapdamage, 'mapdamagee=s{2}' => \@mapdamagee, 'mapdamageb=s{2}' => \@mapdamageb, 'mapdamagec=s{2}' => \@mapdamagec,'matfile=s' => \$matfile, 'briggs=s' => \$briggs,'matfilee=s' => \$matfilee, 'briggse=s' => \$briggse,'matfileb=s' => \$matfileb, 'briggsb=s' => \$briggsb,'matfilec=s' => \$matfilec, 'briggsc=s' => \$briggsc,'o=s' => \$outputprefix, 'n=i' => \$numberOfFragments,'l=i' => \$fraglength, 's=s' => \$filefragsize, 'f=s' => \$filefragfreqsize, 'loc=s' => \$loc, 'fa=s' => \$fa, 'sa=s' => \$sa, 'rl=s' => \$rl, 'scale=s' => \$scale, 'c=f' => \$coverage, 'minsize=i' => \$minsize,'maxsize=i' => \$maxsize,'qs=i' => \$qs,'qs2=i' => \$qs2)
           or defined $help );
 
 if( !(defined $ss) ){
@@ -490,7 +509,19 @@ if( (defined $misincb) ){
   }
 }
 
+if( ($qs < -93) || ($qs > 93) ){
+  die "Please enter an integer between -93 and 93 for qs\n";
+}
 
+if( ($qs2 < -93) || ($qs2 > 93) ){
+  die "Please enter an integer between -93 and 93 for qs2\n";
+}
+
+if ($se) {
+  if( ($qs2 != 0 ) ){
+    die "Do not enter a value for -qs2 when using single-end\n";
+  }
+}
 
 checkDeamParam($briggs, $matfile );
 checkDeamParam($briggse,$matfilee);
@@ -708,6 +739,11 @@ file7.fa\t0.5
 
 foreach my $fafile (@arrayofFilesbact){
   print STDERR "Found bacterial contaminant file ".$fafile."\n";
+
+  if(isZipped($fafile)){
+    die "The following file ".$fafile." is zipped, please unzip it\n";
+  }
+
   if(!(-f $fafile.".fai")){
     my $cmd = "samtools faidx $fafile";
     runcmdforce($cmd);
@@ -776,6 +812,13 @@ my @arrayofFilescontToExtract;
 
 foreach my $fafile (@arrayofFilescont){
   print STDERR "Found present-day human contamination file  ".$fafile."\n";
+
+
+  if(isZipped($fafile)){
+    die "The following file ".$fafile." is zipped, please unzip it\n";
+  }
+
+
   if(!(-f $fafile.".fai")){
     my $cmd = "samtools faidx $fafile";
     runcmdforce($cmd);
@@ -818,6 +861,13 @@ if ($compE>0) {			#if we have endogenous material
 
   foreach my $fafile (@arrayofFilesendo) {
     print STDERR "Found endogenous file  ".$fafile."\n";
+
+
+    if(isZipped($fafile)){
+      die "The following file ".$fafile." is zipped, please unzip it\n";
+    }
+
+
     if (!(-f $fafile.".fai")) {
       my $cmd = "samtools faidx $fafile";
       runcmdforce($cmd);
@@ -1392,6 +1442,9 @@ if($se){
 $cmdsq .= " -i ".$outputprefix."_a.fa ";
 $cmdsq .= " -l ".$readlength." ";
 $cmdsq .= " -c 1 ";
+$cmdsq .= " -qs  ".$qs." ";
+$cmdsq .= " -qs2 ".$qs2." ";
+
 $cmdsq .= " -o ".$outputprefix."_s";
 runcmd($cmdsq);
 
