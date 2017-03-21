@@ -140,11 +140,15 @@ public:
     /** constructor 
      * @param fasta: the path to the genomic fasta file indexed with samtools faidx
      */
-    IndexedGenome(const char* fasta):fd(-1),mapptr(NULL){
-	string faidx(fasta);
+    IndexedGenome(const char* fasta,const char* fastai):fd(-1),mapptr(NULL){
+	//string faidx(fasta);
+	//faidx+=".fai";
+	
+	string faidx(fastai);
+	
 	//cout<<fasta<<endl;
 	string line;
-	faidx+=".fai";
+
 	/* open *.fai file */
 	//cout<<faidx<<endl;
 	ifstream in(faidx.c_str(),ios::in);
@@ -285,7 +289,8 @@ int main (int argc, char *argv[]) {
     string fileSizeFragFreq;
     bool   fileSizeFragBFreq=false;
 
-
+    string tmpDir = "/tmp/";
+    
     int minimumFragSize=   0;
     int maximumFragSize=1000;
     bool noRev=false;
@@ -317,6 +322,7 @@ int main (int argc, char *argv[]) {
 	"\t\t"+"-o\t"+"[fasta out]" +"\t\t\t"+"Write output as a zipped fasta (default: fasta in stdout)"+"\n"+
 	"\t\t"+"-u"                 +"\t\t\t\t\t"+"Produce uncompressed BAM (good for unix pipe)"+"\n"+
 	"\t\t"+"-tag\t" +"[tag]\t\t\t\t"+"Append this string to deflines or BAM tags (Default:  "+booleanAsString(tagb)+")"+"\n"+
+	"\t\t"+"-tmp\t" +"[tmp dir]\t\t\t\t"+"Use this directory as the temporary dir for zipped files (Default:  "+tmpDir+")"+"\n"+
 	
 	"\n"+
 	"\tFragment size: \n"+
@@ -467,6 +473,12 @@ int main (int argc, char *argv[]) {
 	    continue;
 	}
 
+	if(string(argv[i]) == "-tmp" ){
+	    tmpDir    = string(argv[i+1]);
+	    i++;
+	    continue;
+	}
+
 	cerr<<"Error: unknown option "<<string(argv[i])<<endl;
 	return 1;
 	
@@ -540,8 +552,10 @@ int main (int argc, char *argv[]) {
 
 
     if(!specifiedScale && !specifiedLength  && !fileSizeFragB && !fileSizeFragBFreq){
-	cerr<<"Error: must specify -l, -s, -f  or either the log-normal parameters for the fragment size."<<endl;
-	return 1;
+	//cerr<<"Error: must specify -l, -s, -f  or either the log-normal parameters for the fragment size."<<endl;
+	//return 1;
+	//artificially setting specifiedLength to true
+	specifiedLength = true;
     }
 
     // Use fragment size list
@@ -854,7 +868,10 @@ int main (int argc, char *argv[]) {
 
 
     // string bamfiletopen = string(argv[argc-1]);//bam file
-    string fastaFile    = string(argv[argc-1]);//fasta file
+
+    string inFile       = string(argv[argc-1]);//fasta file
+    string fastaFile;//    = string(argv[argc-1]);//fasta file
+    string fastaFileFai;//    = string(argv[argc-1]);//fasta file
     
     double maxProbP = 1.0;
     double maxProbM = 1.0;
@@ -902,10 +919,53 @@ int main (int argc, char *argv[]) {
 #endif
 
     //return 1;
+    bool isGzipped=false;
+    string tempfile_ = tmpDir+"/tmpfileXXXXXX";
+    if(strEndsWith(inFile,".gz")){
+	
 
-    IndexedGenome* genome=new IndexedGenome(fastaFile.c_str());
+	char tmpname[ tempfile_.size()];
+	strcpy(tmpname,tempfile_.c_str());
+	int fdtemp = mkstemp(tmpname);
+	if(fdtemp == -1){
+	    cerr<<"Cannot create temp file using pattern: "<<tempfile_<<", either choose a different temp dir or unzip the file"<<endl;
+	    return 1;
+	}
+	tempfile_ = string(tmpname);
+
+	cerr<<"File "<<inFile<<" is zipped, trying to write to temp. file: "<<tempfile_<<endl;
+
+	fastaFile    = tmpname;
+	fastaFileFai = inFile+".fai";	
+
+	igzstream fastagzfd;
+	string linetmp;
+
+	ofstream myFiletmp;	
+	myFiletmp.open(tmpname);
+
+	fastagzfd.open(inFile.c_str(), ios::in);
+
+	if (fastagzfd.good()){
+	    while ( getline (fastagzfd,linetmp)){
+		myFiletmp << linetmp << endl;
+	    }
+	}
+	myFiletmp.close();
+
+	cerr<<"unzipping is done"<<endl;
+
+	//fastaFile
+	isGzipped=true;
+    }else{
+	fastaFile   =inFile;
+	fastaFileFai=inFile+".fai";	
+    }
+
+    
+    IndexedGenome* genome=new IndexedGenome(fastaFile.c_str(),fastaFileFai.c_str());
     cerr<<"Mapped "<<fastaFile<<" into memory"<<endl;
-
+    
 
 
     
@@ -1462,6 +1522,15 @@ int main (int argc, char *argv[]) {
 	writer.Close();
     }
 
+
+    if(isGzipped){
+	cerr<<"removing temp file:"<<tempfile_<<endl;	   
+	int rmrt=remove(tempfile_.c_str());
+	if(rmrt == -1){
+	    cerr<<"ERROR: Cannot remove temp file:"<<tempfile_<<endl;
+	    return 1;
+	}
+    }
     cerr<<"Program "<<argv[0]<<" terminated succesfully, wrote "<<f<<" sequences"<<endl;
     return 0;
 }
