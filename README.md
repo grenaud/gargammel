@@ -302,6 +302,7 @@ For the input/bact/ directory which represent the microbial contamination, garga
     bacteria2.fa	0.3
     bacteria3.fa	0.2
 
+The abundance will be printed on the console when the program is launched. Some users have reported discrepancies between the original bacterial abundance and the printed one. Make sure that they are equal and that the bacterial abundance file uses UNIX carriage returns (use dos2unix or mac2unix to transform from DOS/MAC to Unix format).
 
 Examples of bacterial databases:
 -------------------------------------------------------------------------------------
@@ -331,7 +332,7 @@ If you wish, you can enter your email for the ftp from NCBI (to avoid getting ba
    src/microbial_fetcher/retrieveFromMetabit all_taxa.tsv anonymous@server.net
 
 
-This will download the necessary files from NCBI to create a database suitable for gargammel to simulate microbial species in the exampleBacteriaDB/fasta and run samtools faidx on each file. You need standard UNIX utilities such as awk/sed/python/curl/wget/gzip to be installed as well as samtools. Please move the fasta/ directory produced (exampleBacteriaDB/fasta in the example above) to the input/bact/. The file named "exampleBacteriaDB/fastafasta/list" is the list of bacterial species along with their abundance. Another file, "exampleBacteriaDB/Microbial_ID.log" details the strain/ID and ftp link used.
+This will download the necessary files from NCBI to create a database suitable for gargammel to simulate microbial species in the exampleBacteriaDB/fasta and run samtools faidx on each file. You need standard UNIX utilities such as awk/sed/python/curl/wget/gzip to be installed as well as samtools. Please move the fasta/ directory produced (exampleBacteriaDB/fasta in the example above) to the input/bact/. The file named "exampleBacteriaDB/fastafasta/list" is the list of bacterial species along with their abundance. Another file, "exampleBacteriaDB/Microbial_ID.log" details the strain/ID and ftp link used. retrieveFromMetabit uses GNU parallel (see O. Tange (2011): GNU Parallel - The Command-Line Power Tool, ;login: The USENIX Magazine, February 2011:42-47.), please make sure that it is installed.
 
 If you want to use a uniform probability instead of a weighted list, go to "input/bact" and type (if fasta files end with .fa):
 

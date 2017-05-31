@@ -56,7 +56,7 @@ int main (int argc, char *argv[]) {
 	       for(unsigned int i=0;i<line.size();i++){
 		   char c=line[i];
 
-		   if(isValidDNA(c)){
+		   if(isValidDNA(toupper(c))){
 		       l1+=c;
 		       l2+=c;
 		   }else{
