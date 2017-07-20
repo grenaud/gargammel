@@ -47,8 +47,8 @@ endif
 
 bacterialex:
 	mkdir -p bactDBexample
-	cd bactDBexample/ && wget -O clovis.tar.gz https://www.dropbox.com/s/aetfpx7xe3z5vdw/clovis.tar.gz?dl=1 && tar xvfz clovis.tar.gz && rm -f clovis.tar.gz  && cd ../
-	cd bactDBexample/ && wget -O k14.tar.gz https://www.dropbox.com/s/d4s97g13mp01f5b/k14.tar.gz?dl=1  && tar xvfz k14.tar.gz && rm -f k14.tar.gz && cd ../
+	cd bactDBexample/ && wget -O clovis.tar.gz  https://www.dropbox.com/s/obmr48d72ahjvhp/clovis.tar.gz?dl=1 && tar xvfz clovis.tar.gz && rm -f clovis.tar.gz  && cd ../
+	cd bactDBexample/ && wget -O k14.tar.gz https://www.dropbox.com/s/1pdbqbguw0jfzib/k14.tar.gz?dl=1  && tar xvfz k14.tar.gz && rm -f k14.tar.gz && cd ../
 
 clean:
 	make -C libgab clean
