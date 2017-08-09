@@ -26,7 +26,7 @@ Do a :
 Requirements:
 -------------------------------------------------------------------------------------
 * git
-* c++ compiler supporting C11++
+* C++ compiler supporting C++11
 * cmake, you can install on Ubuntu by typing: sudo apt install cmake
 * zlib
 * lib gsl, you can install on Ubuntu by typing: sudo apt-get install libgsl0-dev
