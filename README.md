@@ -11,6 +11,8 @@ The website for gargammel can be found here: https://grenaud.github.io/gargammel
 Questions/bug report/feature requests :
 -------------------------------------------------------------------------------------
 
+If you have Github account, consider creating an issue, you will help others who might have the same problem.
+
 	contact: Gabriel Renaud   
 	email:	 gabriel [dot] reno [ at sign ] gmail.com
 
