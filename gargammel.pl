@@ -413,17 +413,49 @@ if( !(defined $ss) ){
 }
 
 if( defined $fa ){
-  $adapterF=$fa;
+  $adapterF=uc($fa);
 }
 
 if( defined $sa ){
-  $adapterR=$sa;
+  $adapterR=uc($sa);
 }
 
 if( defined $rl ){
   $readlength=$rl;
 }
 
+if(index($adapterF, "N") != -1) {
+  my $tempadapStr="";
+  my @DNAalphabet = ("A","C","G","T");
+
+  for(my $i=0;$i<length($adapterF);$i++){
+    if(substr($adapterF,$i,1) eq "N"){
+      $tempadapStr=$tempadapStr.$DNAalphabet[int(rand(4))];
+    }else{
+      $tempadapStr=$tempadapStr.substr($adapterF,$i,1);
+    }
+  }
+  warn "WARNING: Unresolved bases found in forward adapter\n"."Replaced:\n".$adapterF."\nby random bases:\n".$tempadapStr."\n";
+  $adapterF=$tempadapStr;
+}
+
+if(index($adapterR, "N") != -1) {
+  my $tempadapStr="";
+  my @DNAalphabet = ("A","C","G","T");
+
+  for(my $i=0;$i<length($adapterR);$i++){
+    if(substr($adapterR,$i,1) eq "N"){
+      $tempadapStr=$tempadapStr.$DNAalphabet[int(rand(4))];
+    }else{
+      $tempadapStr=$tempadapStr.substr($adapterR,$i,1);
+    }
+  }
+  warn "WARNING Unresolved bases found in reverse adapter\n"."Replaced:\n".$adapterR."\nby random bases:\n".$tempadapStr."\n";
+  $adapterR=$tempadapStr;
+}
+
+
+#die;
 
 if ($ss eq "GA2") {		#- GenomeAnalyzer II (50bp, 75bp)
   if ($se) {
