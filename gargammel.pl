@@ -455,7 +455,7 @@ if(index($adapterR, "N") != -1) {
 }
 
 
-#die;
+
 
 if ($ss eq "GA2") {		#- GenomeAnalyzer II (50bp, 75bp)
   if ($se) {
