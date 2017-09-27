@@ -43,16 +43,34 @@ typedef struct {
 
 int main (int argc, char *argv[]) {
 
+    string file5p="/dev/stdout";
+    string file3p="/dev/stdout";
+    bool singleStr       =false;
+    bool doubleStr       =false;
+    bool singAnddoubleStr=false;
 
 
     vector<substitutionRates> sub5p;
     vector<substitutionRates> sub3p;
 
     string mapdamageFile;
-    
+    bool hFormat=false;
+
     const string usage=string("\t"+string(argv[0])+
                               " [options]  [mis.txt]"+"\n\n"+
-			      " This program reads a misincorporation file and produces .prof files"+
+			      " This program reads a misincorporation file and produces .prof files\n\n"+
+			      
+			      "\t\t"+"-5p\t[output file]\tOutput profile for the 5' end (Default: "+stringify(file5p)+")\n"+
+			      "\t\t"+"-3p\t[output file]\tOutput profile for the 3' end (Default: "+stringify(file3p)+")\n"+
+
+			      "\n\n\tYou can specify either one of the two:\n"+
+			      "\t\t"+"-single\t\t\tReport the deamination profile of a single strand library  (Default: "+booleanAsString( singleStr )+")\n"+
+			      "\t\t"+"-double\t\t\tReport  the deamination profile of a double strand library  (Default: "+booleanAsString( doubleStr )+")\n"+
+			      "\n\tor specify this option:\n"+
+			      "\t\t"+"-both\t\t\tReport both C->T and G->A regardless of stand  (Default: "+booleanAsString( singAnddoubleStr )+")\n"+
+
+			      "\t\t"+"-h\t\t\tMore human readible output (Default: "+booleanAsString(hFormat)+")\n"+
+
 
                               "");
                               
@@ -66,14 +84,81 @@ int main (int argc, char *argv[]) {
         return 1;
     }
 
+    for(int i=1;i<(argc-1);i++){ //all but the last 3 args
+
+        if(string(argv[i]) == "-h"  ){
+            hFormat=true;
+            continue;
+        }
+
+
+        if(string(argv[i]) == "-5p" ){
+            file5p = string(argv[i+1]);
+            i++;
+            continue;
+        }
+
+        if(string(argv[i]) == "-3p" ){
+            file3p = string(argv[i+1]);
+            i++;
+            continue;
+        }
+
+        if(string(argv[i]) == "-both" ){
+            //allStr           = false;
+            singleStr        = false;
+            doubleStr        = false;
+            singAnddoubleStr = true;
+            continue;
+        }
+
+
+        if(string(argv[i]) == "-single" ){
+            //allStr    = false;
+            singleStr        = true;
+            doubleStr        = false;
+	    singAnddoubleStr = false;
+            continue;
+        }
+
+        if(string(argv[i]) == "-double" ){
+            //allStr    = false;
+            singleStr        = false;
+            doubleStr        = true;
+	    singAnddoubleStr = false;
+            continue;
+        }
+    }
+
 
     mapdamageFile          = string(argv[argc-1]);
+    ofstream file5pFP;
 
+    if(file5p == "/dev/stdout"){
+        file5pFP.open(file5p.c_str(), ofstream::out | ofstream::app);
+    }else{
+        file5pFP.open(file5p.c_str());
+    }
 
-    // if(matrixFileSpecified && matrixSpecified){
-    // 	cerr << "Do not specify both -matrix and -matrixfile "<<endl;
-    // 	return 1;
-    // }
+    
+    if (!file5pFP.is_open()){
+        cerr << "Unable to write to 5p file "<<file5p<<endl;
+        exit(1);
+    }
+
+    
+    ofstream file3pFP;
+    if(file3p == "/dev/stdout"){
+        file3pFP.open(file3p.c_str(), ofstream::out | ofstream::app);
+    }else{
+        file3pFP.open(file3p.c_str());
+    }
+
+    if (!file3pFP.is_open()){
+        cerr << "Unable to write to 3p file "<<file3p<<endl;
+        exit(1);
+    }
+
 
 
     vector<substitutionRatesInt> subCount5p;
@@ -241,11 +326,17 @@ int main (int argc, char *argv[]) {
 	cerr << "Error in misincorporation file "<<mapdamageFile<<" the number of defined bases for the 5' and 3' ends differ"<<endl;
 	return 1;
     }
+    if(hFormat)
+        file5pFP<<"pos\t";
 
-    cout<<"pos\tA>C\tA>G\tA>T\tC>A\tC>G\tC>T\tG>A\tG>C\tG>T\tT>A\tT>C\tT>G"<<endl;
-
+    file5pFP<<"A>C\tA>G\tA>T\tC>A\tC>G\tC>T\tG>A\tG>C\tG>T\tT>A\tT>C\tT>G"<<endl;
+    
     //compute actual substitutions 
     for(unsigned int i=0;i<subCount5p.size();i++){
+        if(hFormat)
+            file5pFP<<printIntAsWhitePaddedString(i,int(log10(subCount5p.size()))+1)<<"\t";
+        
+
 	substitutionRates toadd;
 	for(int b=0;b<4;b++){				    
 	    for(int a=0;a<3;a++){		
@@ -257,15 +348,31 @@ int main (int argc, char *argv[]) {
 
 	sub5p.push_back(toadd);
 
-	cout<<i;
-	for(unsigned int k=0;k<12;k++)
-	    cout<<"\t"<<sub5p[i].s[k];
-	cout<<endl;
+	//cout<<i;
+	for(unsigned int k=0;k<12;k++){
+	    if(singleStr || doubleStr || singAnddoubleStr ){
+		if(k==5)//C->T
+		    file5pFP<<"\t"<<sub5p[i].s[k];
+		else
+		    file5pFP<<"\t0.0";
+	    }else{
+		file5pFP<<"\t"<<sub5p[i].s[k];
+	    }
+	}
+	file5pFP<<endl;
 
     }
+    
+    if(hFormat)
+        file3pFP<<"pos\t";
 
-    cout<<"pos\tA>C\tA>G\tA>T\tC>A\tC>G\tC>T\tG>A\tG>C\tG>T\tT>A\tT>C\tT>G"<<endl;
+    file3pFP<<"A>C\tA>G\tA>T\tC>A\tC>G\tC>T\tG>A\tG>C\tG>T\tT>A\tT>C\tT>G"<<endl;
     for(unsigned int i=0;i<subCount3p.size();i++){
+        if(hFormat){	    
+	    file3pFP<<""<<printIntAsWhitePaddedString(i,int(log10(subCount3p.size()))+1)<<"\t";      
+        }
+
+
 	substitutionRates toadd;
 	for(int b=0;b<4;b++){				    
 	    for(int a=0;a<3;a++){		
@@ -275,13 +382,38 @@ int main (int argc, char *argv[]) {
 	}
 	sub3p.push_back(toadd);
 
-
-	cout<<i;
-	for(unsigned int k=0;k<12;k++)
-	    cout<<"\t"<<sub3p[i].s[k];
-	cout<<endl;
+	//cout<<i;
+	for(unsigned int k=0;k<12;k++){
+	    if(singleStr || doubleStr || singAnddoubleStr ){
+		if(singleStr  ){
+		    if(k==5)
+			file3pFP<<"\t"<<sub3p[i].s[k];
+		    else
+			file3pFP<<"\t0.0";
+		}else{
+		    if(doubleStr){
+			if(k==6)//G->A
+			    file3pFP<<"\t"<<sub3p[i].s[k];
+			else
+			    file3pFP<<"\t0.0";			
+		    }else{//both
+			if(k==5 || k==6)//G->A
+			    file3pFP<<"\t"<<sub3p[i].s[k];
+			else
+			    file3pFP<<"\t0.0";			
+		    }
+		}
+	    }else{
+		file3pFP<<"\t"<<sub3p[i].s[k];
+	    }
+	}
+	file3pFP<<endl;
 
     }
+
+
+    file5pFP.close();
+    file3pFP.close();
 
     return 0;
 }
