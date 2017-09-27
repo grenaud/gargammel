@@ -349,17 +349,22 @@ int main (int argc, char *argv[]) {
 	sub5p.push_back(toadd);
 
 	//cout<<i;
+	vector<double> toprint;
 	for(unsigned int k=0;k<12;k++){
 	    if(singleStr || doubleStr || singAnddoubleStr ){
 		if(k==5)//C->T
-		    file5pFP<<"\t"<<sub5p[i].s[k];
+		    //file5pFP<<"\t"<<sub5p[i].s[k];
+		    toprint.push_back(sub5p[i].s[k]);
 		else
-		    file5pFP<<"\t0.0";
+		    //file5pFP<<"\t0.0";
+		    toprint.push_back(0.0);
 	    }else{
-		file5pFP<<"\t"<<sub5p[i].s[k];
+		//file5pFP<<"\t"<<sub5p[i].s[k];
+		toprint.push_back(sub5p[i].s[k]);
 	    }
 	}
-	file5pFP<<endl;
+	
+	file5pFP<<vectorToString(toprint,"\t")<<endl;
 
     }
     
@@ -383,31 +388,39 @@ int main (int argc, char *argv[]) {
 	sub3p.push_back(toadd);
 
 	//cout<<i;
+	vector<double> toprint;
 	for(unsigned int k=0;k<12;k++){
 	    if(singleStr || doubleStr || singAnddoubleStr ){
 		if(singleStr  ){
 		    if(k==5)
-			file3pFP<<"\t"<<sub3p[i].s[k];
+			//file3pFP<<"\t"<<sub3p[i].s[k];
+			toprint.push_back(sub3p[i].s[k]);
 		    else
-			file3pFP<<"\t0.0";
+			//file3pFP<<"\t0.0";
+			toprint.push_back(0.0);
 		}else{
 		    if(doubleStr){
 			if(k==6)//G->A
-			    file3pFP<<"\t"<<sub3p[i].s[k];
+			    //file3pFP<<"\t"<<sub3p[i].s[k];
+			    toprint.push_back(sub3p[i].s[k]);
 			else
-			    file3pFP<<"\t0.0";			
+			    //file3pFP<<"\t0.0";
+			    toprint.push_back(0.0);
 		    }else{//both
 			if(k==5 || k==6)//G->A
-			    file3pFP<<"\t"<<sub3p[i].s[k];
+			    //file3pFP<<"\t"<<sub3p[i].s[k];
+			    toprint.push_back(sub3p[i].s[k]);
 			else
-			    file3pFP<<"\t0.0";			
+			    //file3pFP<<"\t0.0";
+			    toprint.push_back(0.0);
 		    }
 		}
 	    }else{
-		file3pFP<<"\t"<<sub3p[i].s[k];
+		//file3pFP<<"\t"<<sub3p[i].s[k];
+		toprint.push_back(sub3p[i].s[k]);
 	    }
 	}
-	file3pFP<<endl;
+	file3pFP<<vectorToString(toprint,"\t")<<endl;
 
     }
 
