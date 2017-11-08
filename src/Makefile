@@ -3,8 +3,8 @@ CXX      = g++ #-g
 BAMTOOLS= $(realpath ../bamtools/)
 LIBGAB= $(realpath ../libgab/)
 
-CXXFLAGS =  -std=c++0x -Wall -lm -O3 -lz -I${LIBGAB} -I${LIBGAB}/gzstream/ -I${BAMTOOLS}/include/  -c
-LDFLAGS  = ${LIBGAB}/FastQObj.o  ${LIBGAB}/FastQParser.o ${LIBGAB}/PutProgramInHeader.o ${BAMTOOLS}/lib/libbamtools.a  ${LIBGAB}/utils.o ${LIBGAB}/gzstream/libgzstream.a -lm -lz
+CXXFLAGS =  -std=c++0x -Wall -lm -O3 -lz -I${LIBGAB} -I${LIBGAB}/gzstream/ -I${BAMTOOLS}/src/  -c
+LDFLAGS  = ${LIBGAB}/FastQObj.o  ${LIBGAB}/FastQParser.o ${LIBGAB}/PutProgramInHeader.o ${BAMTOOLS}/build/src/api/libbamtools.a  ${LIBGAB}/utils.o ${LIBGAB}/gzstream/libgzstream.a -lm -lz
 
 
 all: fragSim deamSim adptSim fasta2fastas misincorporation2prof

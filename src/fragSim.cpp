@@ -112,6 +112,25 @@ double stdevNorm(const vector<double> & v,const double meanV){
 
 }
 
+//called only if uniqTags is used
+void checkUniqueness(string * deflineToPrint,
+		     map<string, unsigned int> * fragmentID2Count,
+		     const bool tagb ,
+		     const string & tag){
+
+    if (  fragmentID2Count->find(*deflineToPrint) == fragmentID2Count->end() ) {
+	fragmentID2Count->insert( pair<string,unsigned int>( *deflineToPrint, 1) );
+	*deflineToPrint+="_1";
+    }else{
+	*deflineToPrint+="_"+stringify(++fragmentID2Count->at(*deflineToPrint));
+    }
+    
+    if(tagb ){ //the tagb and not uniqTags was taken care of earlier
+	*deflineToPrint=*deflineToPrint+"_"+tag;	    
+    }
+    
+}
+
 /**
  * wrapper for a mmap, a fileid and some faidx indexes
  */
@@ -301,9 +320,10 @@ int main (int argc, char *argv[]) {
     bool   outBAMb            =false;
     bool     tagb             =false;
     string   tag              = "";
-
+    bool uniqTags=false;
     bool produceUnCompressedBAM=false;
-
+    map<string, unsigned int> fragmentID2Count;
+    
     const string usage=string("\n This program takes a fasta file representing a chromosome and generates\n")+
 	" aDNA fragments according to a certain distribution\n\n"+
 	" "+string(argv[0])+" [options]  [chromosome fasta] "+"\n\n"+
@@ -322,8 +342,10 @@ int main (int argc, char *argv[]) {
 	"\t\t"+"-o\t"+"[fasta out]" +"\t\t\t"+"Write output as a zipped fasta (default: fasta in stdout)"+"\n"+
 	"\t\t"+"-u"                 +"\t\t\t\t\t"+"Produce uncompressed BAM (good for unix pipe)"+"\n"+
 	"\t\t"+"-tag\t" +"[tag]\t\t\t\t"+"Append this string to deflines or BAM tags (Default:  "+booleanAsString(tagb)+")"+"\n"+
-	"\t\t"+"-tmp\t" +"[tmp dir]\t\t\t\t"+"Use this directory as the temporary dir for zipped files (Default:  "+tmpDir+")"+"\n"+
-	
+	"\t\t"+"-tmp\t" +"[tmp dir]\t\t\t"+"Use this directory as the temporary dir for zipped files (default:  "+tmpDir+")"+"\n"+
+	"\t\t"+"-uniq\t" +"\t\t\t\t"+"Make sure that the fragment names are unique by appending a suffix (default:  "+booleanAsString(uniqTags)+")"+"\n"+
+	"\t\t"+"\t" +"\t\t\t\t"+"note: this might not be practical for large datasets"+"\n"+
+
 	"\n"+
 	"\tFragment size: \n"+
 	"\t\t"+"-m\t"+"[length]" +"\t\t\t"+"Minimum fragments length < (default: "+stringify(minimumFragSize)+")"+"\n"+
@@ -370,6 +392,12 @@ int main (int argc, char *argv[]) {
 	    i++; 
 	    compFileSpecified = true;
 	    // cout<<"cf "<<compFile<<endl;
+	    continue;
+	}
+
+	if(string(argv[i]) == "-uniq" ){
+	    uniqTags = true;
+	    i++; 
 	    continue;
 	}
 
@@ -1276,7 +1304,7 @@ int main (int argc, char *argv[]) {
 	cerr<<"t:"<<temp<<"#"<<endl;	
 #endif
 
-	if(tagb){
+	if(tagb && !uniqTags){
 	    deflineToPrint=deflineToPrint+tag;	    
 	}
 
@@ -1350,6 +1378,13 @@ int main (int argc, char *argv[]) {
 	    }
 
 
+	    if(uniqTags){
+		checkUniqueness(&deflineToPrint,
+				&fragmentID2Count,
+				tagb ,
+				tag);
+	    }
+	
 	    if(outFastagzb){
 		outFastagzfp<<">"<<deflineToPrint<<"\n"<<frag<<endl;
 	    }else{
@@ -1409,7 +1444,16 @@ int main (int argc, char *argv[]) {
 		cerr<<"accepted "<<probAcc<<endl;
 #endif
 
-		    if(outFastagzb){
+
+		if(uniqTags){
+		    checkUniqueness(&deflineToPrint,
+				    &fragmentID2Count,
+				    tagb ,
+				    tag);
+		}
+	
+		
+		if(outFastagzb){
 			outFastagzfp<<">"<<deflineToPrint<<"\n"<<frag<<endl;
 		    }else{
 			if(outBAMb){
@@ -1473,6 +1517,14 @@ int main (int argc, char *argv[]) {
 #ifdef DEBUG    
 		    cerr<<"accepted "<<probAcc<<endl;
 #endif
+
+		    if(uniqTags){
+			checkUniqueness(&deflineToPrint,
+					&fragmentID2Count,
+					tagb ,
+					tag);
+		    }
+
 		    if(outFastagzb){
 			outFastagzfp<<">"<<deflineToPrint<<"\n"<<frag<<endl;
 		    }else{

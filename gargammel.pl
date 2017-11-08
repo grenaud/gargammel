@@ -286,6 +286,9 @@ sub usage
   " \tFragment size limit:
 		--minsize\t[length]\tMinimum fragments length (default: ".$minsize.")
                 --maxsize\t[length]\tMaximum fragments length (default: ".$maxsize.")\n".
+
+  " \t\t--uniq\t\t\tMake sure that the fragments have unique names (default: not used)\n".
+
   "\n".
   " Deamination\n".
   " ===================\n".
@@ -360,6 +363,8 @@ sub usage
   exit;
 }
 
+my $uniq =0;
+
 my $starttime = time;
 
 my $coverage=undef;
@@ -405,7 +410,7 @@ my $sa;
 my $rl;
 
 usage() if ( @ARGV < 1 or
-	     ! GetOptions('help|?' => \$help, 'mock' => \$mock, 'se' => \$se, 'ss=s' => \$ss, 'distmis=i' => \$distmis, 'misince=s' => \$misince,'misincb=s' => \$misincb,'misincc=s' => \$misincc, 'comp=s' => \$comp,'mapdamage=s{2}' => \@mapdamage, 'mapdamagee=s{2}' => \@mapdamagee, 'mapdamageb=s{2}' => \@mapdamageb, 'mapdamagec=s{2}' => \@mapdamagec,'matfile=s' => \$matfile, 'damage=s' => \$briggs,'matfilee=s' => \$matfilee, 'damagee=s' => \$briggse,'matfileb=s' => \$matfileb, 'damageb=s' => \$briggsb,'matfilec=s' => \$matfilec, 'damagec=s' => \$briggsc,'o=s' => \$outputprefix, 'n=i' => \$numberOfFragments,'l=i' => \$fraglength, 's=s' => \$filefragsize, 'f=s' => \$filefragfreqsize, 'loc=s' => \$loc, 'fa=s' => \$fa, 'sa=s' => \$sa, 'rl=s' => \$rl, 'scale=s' => \$scale, 'c=f' => \$coverage, 'minsize=i' => \$minsize,'maxsize=i' => \$maxsize,'qs=i' => \$qs,'qs2=i' => \$qs2)
+	     ! GetOptions('help|?' => \$help, 'mock' => \$mock,'uniq' => \$uniq, 'se' => \$se, 'ss=s' => \$ss, 'distmis=i' => \$distmis, 'misince=s' => \$misince,'misincb=s' => \$misincb,'misincc=s' => \$misincc, 'comp=s' => \$comp,'mapdamage=s{2}' => \@mapdamage, 'mapdamagee=s{2}' => \@mapdamagee, 'mapdamageb=s{2}' => \@mapdamageb, 'mapdamagec=s{2}' => \@mapdamagec,'matfile=s' => \$matfile, 'damage=s' => \$briggs,'matfilee=s' => \$matfilee, 'damagee=s' => \$briggse,'matfileb=s' => \$matfileb, 'damageb=s' => \$briggsb,'matfilec=s' => \$matfilec, 'damagec=s' => \$briggsc,'o=s' => \$outputprefix, 'n=i' => \$numberOfFragments,'l=i' => \$fraglength, 's=s' => \$filefragsize, 'f=s' => \$filefragfreqsize, 'loc=s' => \$loc, 'fa=s' => \$fa, 'sa=s' => \$sa, 'rl=s' => \$rl, 'scale=s' => \$scale, 'c=f' => \$coverage, 'minsize=i' => \$minsize,'maxsize=i' => \$maxsize,'qs=i' => \$qs,'qs2=i' => \$qs2)
           or defined $help );
 
 if( !(defined $ss) ){
@@ -1196,6 +1201,9 @@ if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
 	}
       }
     }
+    if($uniq){
+      $cmd1 .= " -uniq ";
+    }
     $cmd1 .= "  ".$arrayofFilesendo[0]." |gzip > ".$outputprefix.".e.fa.gz";
     runcmd($cmd1);
 
@@ -1216,6 +1224,9 @@ if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
 	  $cmd2 .= " -l ".$fraglength." ";
 	}
       }
+    }
+    if($uniq){
+      $cmd1 .= " -uniq ";
     }
     $cmd2.=" ".$arrayofFilesendo[1]." |gzip >> ".$outputprefix.".e.fa.gz";
     runcmd($cmd2);
@@ -1247,6 +1258,9 @@ if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
       }
     }
     $cmd1 .= "  ".$arrayofFilesendo[0]." | gzip > ".$outputprefix.".e.fa.gz";
+    if($uniq){
+      $cmd1 .= " -uniq ";
+    }
     runcmd($cmd1);
 
   }
@@ -1282,7 +1296,9 @@ if ($#arrayofFilescont != -1 && $numberOfFragmentsC>0) {
 	}
       }
     }
-
+    if($uniq){
+      $cmd1 .= " -uniq ";
+    }
     $cmd1 .= "  ".$arrayofFilescont[$i]." | gzip ";
     if($i==0){
       $cmd1 .= " >  ";
@@ -1322,6 +1338,9 @@ if ($#arrayofFilesbact != -1 && $numberOfFragmentsB>0) {
 	  $cmd1 .= " -l ".$fraglength." ";
 	}
       }
+    }
+    if($uniq){
+      $cmd1 .= " -uniq ";
     }
     $cmd1 .= "  ".$arrayofFilesbact[$i]." | gzip ";
     if($i==0){
