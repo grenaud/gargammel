@@ -1207,7 +1207,7 @@ if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
     $cmd1 .= "  ".$arrayofFilesendo[0]." |gzip > ".$outputprefix.".e.fa.gz";
     runcmd($cmd1);
 
-    my $cmd2="".$fragsim." -tag e1 -n ".$numberOfFragmentsE2;
+    my $cmd2="".$fragsim." -tag e2 -n ".$numberOfFragmentsE2;
 
     $cmd2 .= " -m ".$minsize." ";
     $cmd2 .= " -M ".$maxsize." ";
