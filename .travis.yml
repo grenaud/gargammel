@@ -1,5 +1,2 @@
 language: C++
-
-
-
 script: make
