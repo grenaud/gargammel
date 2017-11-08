@@ -1,2 +1,3 @@
 language: C++
+before_script: sudo apt-get install g++ gsl-bin gsl-ref-html libgsl0-dev
 script: make
