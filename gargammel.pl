@@ -1226,7 +1226,7 @@ if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
       }
     }
     if($uniq){
-      $cmd1 .= " -uniq ";
+      $cmd2 .= " -uniq ";
     }
     $cmd2.=" ".$arrayofFilesendo[1]." |gzip >> ".$outputprefix.".e.fa.gz";
     runcmd($cmd2);
