@@ -349,11 +349,11 @@ sub usage
 	                                \tuse the shorthand in the left column:
                                                                         (single-end, paired-end)
 \t\t\t\t\t\t   GA2  - GenomeAnalyzer II (  50bp,  75bp)
-\t\t\t\t\t\t   HS20 - HiSeq 2000        ( 100bp,   N/A)
+\t\t\t\t\t\t   HS20 - HiSeq 2000        ( 100bp, 100bp)
 \t\t\t\t\t\t   HS25 - HiSeq 2500        ( 125bp, 150bp) (Default)
-\t\t\t\t\t\t   HSXt - HiSeqX TruSeq     ( 150bp,   N/A)
-\t\t\t\t\t\t   MSv1 - MiSeq v1          ( 250bp,   N/A)
-\t\t\t\t\t\t   MSv3 - MiSeq v3          ( 250bp,   N/A)".
+\t\t\t\t\t\t   HSXt - HiSeqX TruSeq     ( 150bp, 150bp)
+\t\t\t\t\t\t   MSv1 - MiSeq v1          ( 250bp, 250bp)
+\t\t\t\t\t\t   MSv3 - MiSeq v3          ( 250bp, 250bp)".
 
 	  "\n\n".
   "\n\n".
@@ -473,14 +473,14 @@ if ($ss eq "GA2") {		#- GenomeAnalyzer II (50bp, 75bp)
     }
   }
 } else {
-  if ($ss eq "HS20") {		#- HiSeq 2000 (100bp)
-    if ($se) {
+  if ($ss eq "HS20") {		#- HiSeq 2000 (100bp,100bp)
+    #if ($se) {
       if ($readlength>100) {
 	die "Read length ".$readlength." is greater than the one allowed by the platform\n";
       }
-    } else {
-      die "The platform does not provide paired-end sequencing\n";
-    }
+    #} else {
+    #  die "The platform does not provide paired-end sequencing\n";
+    #}
   } else {
     if ($ss eq "HS25") {	#- HiSeq 2500 (125bp, 150bp) (Default)
       if ($se) {
@@ -493,32 +493,32 @@ if ($ss eq "GA2") {		#- GenomeAnalyzer II (50bp, 75bp)
 	}
       }
     } else {
-      if ($ss eq "HSXt") {	#- HiSeqX TruSeq (150bp)
-	if ($se) {
-	  if ($readlength>150) {
+      if ($ss eq "HSXt") {	#- HiSeqX TruSeq (150bp,150bp)
+	#$if ($se) {
+	if ($readlength>150) {
+	  die "Read length ".$readlength." is greater than the one allowed by the platform\n";
+	}
+	#} else {
+	#  die "The platform does not provide paired-end sequencing\n";
+	#}
+      } else{
+	if ($ss eq "MSv1") {	#- MiSeq v1 (250bp,250bp)
+	  #if ($se) {
+	  if ($readlength>250) {
 	    die "Read length ".$readlength." is greater than the one allowed by the platform\n";
 	  }
+	#} else {
+	#    die "The platform does not provide paired-end sequencing\n";
+	  #  }
 	} else {
-	  die "The platform does not provide paired-end sequencing\n";
-	}
-      } else{
-	if ($ss eq "MSv1") {	#- MiSeq v1 (250bp)
-	  if ($se) {
+	  if ($ss eq "MSv3") {	#- MiSeq v3 (250bp,250bp)
+	    #if ($se) {
 	    if ($readlength>250) {
 	      die "Read length ".$readlength." is greater than the one allowed by the platform\n";
 	    }
-	  } else {
-	    die "The platform does not provide paired-end sequencing\n";
-	  }
-	} else {
-	  if ($ss eq "MSv3") {	#- MiSeq v3 (250bp)
-	    if ($se) {
-	      if ($readlength>250) {
-		die "Read length ".$readlength." is greater than the one allowed by the platform\n";
-	      }
-	    } else {
-	      die "The platform does not provide paired-end sequencing\n";
-	    }
+	    #} else {
+	    #  die "The platform does not provide paired-end sequencing\n";
+	    #}
 	  } else {
 	    die "Invalid sequencing platform ".$ss."\n";
 	  }
