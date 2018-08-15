@@ -34,12 +34,12 @@ bamtools/lib/libbamtools.so: bamtools/src/api/BamAlignment.h
 art_src_MountRainier/art_illumina_src/art_illumina.o: #todo: add wget after rm 
 	rm -rf art_src_MountRainier/ art_src_MountRainier_Linux/ art_src_MountRainier_MacOS/ artsrcmountrainier20160605linuxtgz.tgz artsrcmountrainier20160605macostgz.tgz
 ifeq ($(OS),Darwin)
-	wget http://www.niehs.nih.gov/research/resources/assets/docs/artsrcmountrainier20160605macostgz.tgz
+	wget -O artsrcmountrainier20160605macostgz.tgz https://www.dropbox.com/s/6zjipl74de9akg5/artsrcmountrainier2016.06.05macos.tgz?dl=0 
 	tar xvfz artsrcmountrainier20160605macostgz.tgz
 	cd art_src_MountRainier_MacOS/ && ./configure && make && cd ..
 	ln -s art_src_MountRainier_MacOS  art_src_MountRainier
 else
-	wget http://www.niehs.nih.gov/research/resources/assets/docs/artsrcmountrainier20160605linuxtgz.tgz
+	wget -O artsrcmountrainier20160605linuxtgz.tgz https://www.dropbox.com/s/wf8441vslu1f1nd/artsrcmountrainier20160605linuxtgz.tgz?dl=0
 	tar xvfz artsrcmountrainier20160605linuxtgz.tgz
 	cd art_src_MountRainier_Linux/ && ./configure && make && cd ..
 	ln -s art_src_MountRainier_Linux  art_src_MountRainier
