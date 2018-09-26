@@ -190,11 +190,44 @@ This follows the output of https://bitbucket.org/ustenzel/damage-patterns.git
 
     Lazaridis, Iosif, et al. "Ancient human genomes suggest three ancestral populations for present-day Europeans." Nature 513.7518 (2014): 409-413.
 
+See the methylation question for adding different rates of deamination for methylated/unmethylated cytosine.
+
 
 Can I specify different rates of misincorporation due to deamination for the endogenous/bacterial/human contaminant sources?
 -------------------------------------------------------------------------------------
 
 Yes, please refer to the options of the wrapper script gargammel.pl
+
+
+Is it possible to specify different rates of deamination for methylated and unmethylated bases?
+-------------------------------------------------------------------------------------
+
+Yes. In the endogenous genome, specify methylated cytosine as 'c' (lowercase c) and unmethylated cytosine as 'C' (uppercase C). You can specify multiple cells using the following directory structure:
+
+    input/
+    input/endo
+    input/endo/C0
+    input/endo/C0/chr20_0_split1.fa
+    input/endo/C0/chr20_0_split1.fa.fai
+    input/endo/C0/chr20_0_split2.fa
+    input/endo/C0/chr20_0_split2.fa.fai
+    input/endo/C1
+    input/endo/C1/chr20_1_split1.fa
+    input/endo/C1/chr20_1_split1.fa.fai
+    input/endo/C1/chr20_1_split2.fa
+    input/endo/C1/chr20_1_split2.fa.fai
+    input/endo/C2
+    input/endo/C2/chr20_2_split1.fa
+    input/endo/C2/chr20_2_split1.fa.fai
+    input/endo/C2/chr20_2_split2.fa
+    input/endo/C2/chr20_2_split2.fa.fai
+
+Where C0 reprensents the first cell, C1 the second and so forth. A lower case C 'c' is a methylated C and an uppercase 'C' is a an unmethylated C. To create these files from a reference and a methylation map, please see the script src/addMethyl.pl which needs to be modified (hardcoded paths).
+
+Methylated and unmethylated cytosines on the - strand can be specified using 'g' and 'G'. Once this is done, you can specify the option:  --methyl for gargammel.pl.  When using --methyl, you can then specify different matrix files for rates of deamination for nonmethylated and methylated cytosines:
+
+    -matfilenonmeth    [matrix file prefix] Read the matrix file of substitutions for non-methylated Cs
+    -matfilemeth       [matrix file prefix] Read the matrix file of substitutions for methylated Cs
 
 
 How can I get an ancient DNA composition profile for gargammel?

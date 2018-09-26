@@ -142,6 +142,9 @@ private:
     int fd;
     /* the mmap (memory mapped) pointer */
     char *mapptr;
+
+    bool uppercase;
+
     /** reads an fill a string */
     bool readline(gzFile in,string& line){
 	if(gzeof(in)) return false;
@@ -159,7 +162,7 @@ public:
     /** constructor 
      * @param fasta: the path to the genomic fasta file indexed with samtools faidx
      */
-    IndexedGenome(const char* fasta,const char* fastai):fd(-1),mapptr(NULL){
+    IndexedGenome(const char* fasta,const char* fastai,bool _uppercase):fd(-1),mapptr(NULL),uppercase(_uppercase){
 	//string faidx(fasta);
 	//faidx+=".fai";
 	
@@ -245,20 +248,26 @@ public:
 
     
     string fetchSeq(const FaidxPtr faidx,int64_t index, int lengthFragment){
-	//cerr<<"fetchSeq"<<endl;
+	//cerr<<"fetchSeq "<< uppercase<<endl;
 	int64_t index2=index;
 	string strToPrint="";
 	    
-	for(int j=0;j<lengthFragment;j++){ //for each char
-	    
-	    long pos= faidx->offset +
-		index2 / faidx->line_blen * faidx->line_len +
-		index2 % faidx->line_blen
-		;
-	    // cerr<<"pos "<<pos<<endl;
-	    // cerr<<char(toupper(mapptr[pos]))<<endl;
-	    strToPrint+=char(toupper(mapptr[pos]));
-	    index2++;
+	if(uppercase){
+	    for(int j=0;j<lengthFragment;j++){ //for each char	    
+		long pos= faidx->offset +
+		    index2 / faidx->line_blen * faidx->line_len +
+		    index2 % faidx->line_blen;
+		strToPrint+=char(toupper(mapptr[pos]));
+		index2++;
+	    }
+	}else{
+	    for(int j=0;j<lengthFragment;j++){ //for each char	    
+		long pos= faidx->offset +
+		    index2 / faidx->line_blen * faidx->line_len +
+		    index2 % faidx->line_blen;
+		strToPrint+=char(        mapptr[pos] );
+		index2++;
+	    }
 	}
 	       
 	return strToPrint;   	
@@ -319,6 +328,8 @@ int main (int argc, char *argv[]) {
     string outBAM           ;
     bool   outBAMb            =false;
     bool     tagb             =false;
+    bool     uppercase        =true;
+
     string   tag              = "";
     bool uniqTags=false;
     bool produceUnCompressedBAM=false;
@@ -335,6 +346,7 @@ int main (int argc, char *argv[]) {
 	"\t\t"+"\t"+""+"\t\t\t\t"+"if this is not specified, the base composition"+"\n"+
 	"\t\t"+"\t"+""+"\t\t\t\t"+"will only reflect the chromosome file used"+"\n"+
 	"\t\t"+"--norev\t"+""+"\t\t\t\t"+"Do not reverse complement (default: rev. comp half of seqs.)"+"\n"+
+	"\t\t"+"--case\t"+""+"\t\t\t\t"+"Do not set the sequence to upper-case (default: uppercase the seqs.)"+"\n"+
 
 	"\n"+
 	"\tOutput options\n"+
@@ -991,7 +1003,7 @@ int main (int argc, char *argv[]) {
     }
 
     
-    IndexedGenome* genome=new IndexedGenome(fastaFile.c_str(),fastaFileFai.c_str());
+    IndexedGenome* genome=new IndexedGenome(fastaFile.c_str(),fastaFileFai.c_str(),uppercase);
     cerr<<"Mapped "<<fastaFile<<" into memory"<<endl;
     
 

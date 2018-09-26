@@ -56,6 +56,7 @@ int main (int argc, char *argv[]) {
     bool putDeamInName         =false;
 
     bool verbose               =false;
+    bool lastRowMatrix         =true;
     //Deamination parameters
     bool useBriggs             =false;
     double vBrgs = 0.0;
@@ -82,8 +83,18 @@ int main (int argc, char *argv[]) {
     vector<substitutionRates> sub5p;
     vector<substitutionRates> sub3p;
 
+    vector<substitutionRates> sub5pWiMeth;
+    vector<substitutionRates> sub3pWiMeth;
+    vector<substitutionRates> sub5pNoMeth;
+    vector<substitutionRates> sub3pNoMeth;
+
     string matrixFile;
     bool   matrixFileSpecified=false;
+
+    string matrixFileNoMeth;
+    bool   matrixFileSpecifiedNoMeth  =false;
+    string matrixFileWiMeth;
+    bool   matrixFileSpecifiedWithMeth=false;
 
     string mapdamageFile;
     bool   mapdamageFileSpecified=false;
@@ -107,8 +118,11 @@ int main (int argc, char *argv[]) {
 			      "\t\t"+"-u\t"               +"\t\t\t\t"+"Produce uncompressed BAM (good for unix pipe)"+"\n"+
 
 			      "\t\t"+"-o\t"+"[fasta out]" +"\t\t\t"+"Write fasta output as a zipped fasta"+"\n"+
-			      "\t\t"+"-name"              +"\t\t\t\t\t"+"Put a tag in the read name with deam bases (Default "+booleanAsString(putDeamInName)+")"+"\n"+
+			      "\t\t"+"-name"              +"\t\t\t\t\t"+"Put a tag in the read name with deam bases (default "+booleanAsString(putDeamInName)+")"+"\n"+
 			      "\t\t"+"-v\t"+""            +"\t\t\t\t"+"verbose mode"+"\n"+
+			      "\t\t"+"-last\t"+""            +"\t\t\t\t"+"If matfile is used, do not use the substitution rates of the"+"\n"+
+			      "\t\t"+"\t"+""             +"\t\t\t\t"+"last row over the rest of the molecule (default: no data = use last row)"+"\n"+
+
 
 			      "\n"
 			      +" Mandatory deamination options:\n"+ 
@@ -121,7 +135,17 @@ int main (int argc, char *argv[]) {
                               "\t\t"+"                               " +"\t\t"+"Double strand will have and C->T at the 5' end and G->A damage at the 3' end"+"\n"+
 			      "\n"+
 
-                              "\t\t"+"-matfile  [matrix file prefix]" +"\t\t"+"Read the matrix file of substitutions instead of the default "+"\n"+
+                              "\t\t"+"-matfile  [matrix file prefix]" +"\t\t"+"Read the matrix file of substitutions instead of the default"+"\n"+
+                              "\t\t"+"                               " +"\t\t"+"Provide the prefix only, both files must end with"+"\n"+
+                              "\t\t"+"                               " +"\t\t"+"5.dat and 3.dat"+"\n"+
+			      "\n"+
+
+                              "\t\t"+"-matfilenonmeth  [matrix file prefix]" +"\t"+"Read the matrix file of substitutions for non-methylated Cs"+"\n"+
+                              "\t\t"+"                               " +"\t\t"+"Provide the prefix only, both files must end with"+"\n"+
+                              "\t\t"+"                               " +"\t\t"+"5.dat and 3.dat"+"\n"+
+			      "\n"+
+
+                              "\t\t"+"-matfilemeth  [matrix file prefix]" +"\t"+"Read the matrix file of substitutions for methylated Cs"+"\n"+
                               "\t\t"+"                               " +"\t\t"+"Provide the prefix only, both files must end with"+"\n"+
                               "\t\t"+"                               " +"\t\t"+"5.dat and 3.dat"+"\n"+
 			      "\n"+
@@ -136,6 +160,7 @@ int main (int argc, char *argv[]) {
                               "\t\t"+"                               " +"\t\t"+"\tl: length of overhanging ends (geometric parameter)"+"\n"+
                               "\t\t"+"                               " +"\t\t"+"\td: prob. of deamination of Cs in double-stranded parts"+"\n"+
                               "\t\t"+"                               " +"\t\t"+"\ts: prob. of deamination of Cs in single-stranded parts"+"\n"+
+
 
 			      // "\t\t"+"-damagess     [d,s5,s3,l5,l3]" +"\t\t\t"+"Single-strand model"+"\n"+
                               // "\t\t"+"                               " +"\t\t"+"The parameters must be comma-separated e.g.: -damagess 0.01,0.5,0.7,0.6,0.7"+"\n"+
@@ -197,6 +222,20 @@ int main (int argc, char *argv[]) {
 	if(string(argv[i]) == "-matfile" ){
 	    matrixFile          = string(argv[i+1]);
 	    matrixFileSpecified = true;
+	    i++;
+	    continue;
+	}
+
+	if(string(argv[i]) == "-matfilenonmeth" ){
+	    matrixFileNoMeth          = string(argv[i+1]);
+	    matrixFileSpecifiedNoMeth = true;
+	    i++;
+	    continue;
+	}
+
+	if(string(argv[i]) == "-matfilemeth" ){
+	    matrixFileWiMeth            = string(argv[i+1]);
+	    matrixFileSpecifiedWithMeth = true;
 	    i++;
 	    continue;
 	}
@@ -295,6 +334,11 @@ int main (int argc, char *argv[]) {
             continue;
         }
 
+        if(string(argv[i]) == "-last"  ){
+            lastRowMatrix=false;
+            continue;
+        }
+
         if(string(argv[i]) == "-o" ){
             outFastagz  = string(argv[i+1]);
             i++;
@@ -321,15 +365,34 @@ int main (int argc, char *argv[]) {
         return 1;
     }
 
-    if(!useBriggs           && 
-       !useBriggsss         && 
-       !matrixSpecified     && 
-       !matrixFileSpecified &&
+    if(!useBriggs                     && 
+       !useBriggsss                   && 
+       !matrixSpecified               && 
+       !matrixFileSpecifiedWithMeth  &&
+       !matrixFileSpecifiedNoMeth     &&
+       !matrixFileSpecified           &&
        !mapdamageFileSpecified){
     	cerr << "Please specify the matrix to use or use the Briggs parameter model"<<endl;
     	return 1;
     }
 
+    if(matrixFileSpecified          &&
+       matrixFileSpecifiedWithMeth  &&
+       matrixFileSpecifiedNoMeth    ){
+    	cerr << "Please specify matrix with/without methylation but not the overall matrix"<<endl;
+    	return 1;	
+    }
+
+    if( 
+       (!matrixFileSpecifiedWithMeth  &&
+	 matrixFileSpecifiedNoMeth    )
+	||
+       ( matrixFileSpecifiedWithMeth  &&
+	 !matrixFileSpecifiedNoMeth    )
+	){
+    	cerr << "Please specify both the matrix with/without methylation, not just one"<<endl;
+    	return 1;	
+    }
 
     if(outFastagzb && outBAMb){ 
         cerr<<"Error: cannot specify both -o and -b"<<endl;
@@ -525,10 +588,10 @@ int main (int argc, char *argv[]) {
 
 		sub5p.push_back(toadd);
 #ifdef DEBUG
-		cout<<i<<"\t";
+		cerr<<i<<"\t";
 		for(unsigned int k=0;k<12;k++)
-		    cout<<sub5p[i].s[k]<<" ";
-		cout<<endl;
+		    cerr<<sub5p[i].s[k]<<" ";
+		cerr<<endl;
 #endif
 	    }
 
@@ -543,10 +606,10 @@ int main (int argc, char *argv[]) {
 		sub3p.push_back(toadd);
 
 #ifdef DEBUG
-		cout<<i<<"\t";
+		cerr<<i<<"\t";
 		for(unsigned int k=0;k<12;k++)
-		    cout<<sub3p[i].s[k]<<" ";
-		cout<<endl;
+		    cerr<<sub3p[i].s[k]<<" ";
+		cerr<<endl;
 #endif
 
 	    }
@@ -559,152 +622,442 @@ int main (int argc, char *argv[]) {
 	    if(mapdamageProtocol == "double" ){
 		doubleDeam=true;
 	    }
-	    
+	 
+	    //end if mapdamageFileSpecified   
 	}else{//else, we specify a .dat matrix
-	    string deam5File;
-	    string deam3File;
+
+	    //cerr<<"test1"<<endl;
+	    if(matrixFileSpecifiedWithMeth || matrixFileSpecifiedNoMeth){
+		//With methylation
+		
+		string deam5FileWiMeth;
+		string deam3FileWiMeth;
+		
+		deam5FileWiMeth = matrixFileWiMeth+"5.dat";
+		deam3FileWiMeth = matrixFileWiMeth+"3.dat";	
+		string line;
+#ifdef DEBUG
+		cerr<<"Files deamination with methylation"<<endl;
+		cerr<<deam5FileWiMeth<<endl;
+		cerr<<deam3FileWiMeth<<endl;
+#endif
+		////////////////////////////////////////////////////////
+		//READ file with 5p deamination rates with methylation/
+		///////////////////////////////////////////////////////
+
+		igzstream deam5pFileStWiMeth;
+
+		deam5pFileStWiMeth.open(deam5FileWiMeth.c_str(), ios::in);
+
+
+		if (deam5pFileStWiMeth.good()){
+		    //header
+		    if ( !getline (deam5pFileStWiMeth,line)){
+			cerr << "Parsing error for 5p deamination file "<<deam5FileWiMeth<<endl;
+			return 1;
+		    }
+
+		    while ( getline (deam5pFileStWiMeth,line)){
+
+			vector<string> fields = allTokens(line,'\t');
+			vector<string> firstFields;
+			for(unsigned int i=1;i<fields.size();i++){
+			    vector<string> fields2 = allTokens(fields[i],' ');
+			    firstFields.push_back(fields2[0]);
+			}
+	    
+			if(firstFields.size()!=12){
+			    cerr << "line from deamination does not have 12 fields "<<line<<" "<<firstFields.size()<<endl;
+			    return 1;
+			}
+	    
+			substitutionRates toadd;
+			for(unsigned int i=0;i<firstFields.size();i++){		
+			    toadd.s[i]=destringify<double>(firstFields[i]);
+#ifdef DEBUG
+			    cerr<<sub5pWiMeth.size()<<"\t"<<substiString[i]<<"\t"<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
+#endif
+			}	
+
+
+			for(int b=0;b<4;b++){		
+			    double sum =0.0;
+			    for(int a=0;a<3;a++){		
+				int idx = b*3+a;
+				sum+=toadd.s[idx];
+			    }
+			    if(sum>1.0){
+				cerr<<"Problem with line "<<line<<" in file "<<deam5FileWiMeth<<" the sum of the substitution probabilities exceeds 1"<<endl;
+				return 1;
+			    }
+			}
+
+			sub5pWiMeth.push_back(toadd);
+			//return 1;
+		    }
 	
-	    if(matrixFileSpecified){
-		deam5File = matrixFile+"5.dat";
-		deam3File = matrixFile+"3.dat";	
-	    }else{   
-		deam5File = getCWD(argv[0])+ "matrices/"+matrix+"-5.dat";
-		deam3File = getCWD(argv[0])+ "matrices/"+matrix+"-3.dat";	
-	    }
-	
-	    string line;
-
-	    ///////////////////////////////////////
-	    //READ file with 5p deamination rates /
-	    ///////////////////////////////////////
-	    igzstream deam5pFileSt;
-
-	    deam5pFileSt.open(deam5File.c_str(), ios::in);
-
-
-	    if (deam5pFileSt.good()){
-		//header
-		if ( !getline (deam5pFileSt,line)){
-		    cerr << "Parsing error for 5p deamination file "<<deam5File<<endl;
+		    deam5pFileStWiMeth.close();
+		}else{
+		    cerr << "Unable to open 5p deamination file "<<deam5FileWiMeth<<endl;
 		    return 1;
 		}
 
-		while ( getline (deam5pFileSt,line)){
-		    vector<string> fields = allTokens(line,'\t');
-		    vector<string> firstFields;
-		    for(unsigned int i=1;i<fields.size();i++){
-			vector<string> fields2 = allTokens(fields[i],' ');
-			firstFields.push_back(fields2[0]);
-		    }
-	    
-		    if(firstFields.size()!=12){
-			cerr << "line from deamination does not have 12 fields "<<line<<" "<<firstFields.size()<<endl;
+
+		////////////////////////////////////////////////////////
+		//READ file with 3p deamination rates with methylation/
+		///////////////////////////////////////////////////////
+		igzstream deam3pFileStWiMeth;
+
+		deam3pFileStWiMeth.open(deam3FileWiMeth.c_str(), ios::in);
+
+
+		if (deam3pFileStWiMeth.good()){
+		    //header
+		    if ( !getline (deam3pFileStWiMeth,line)){
+			cerr << "Parsing error for 3p deamination file "<<deam3FileWiMeth<<endl;
 			return 1;
 		    }
-	    
-		    substitutionRates toadd;
-		    for(unsigned int i=0;i<firstFields.size();i++){		
-			toadd.s[i]=destringify<double>(firstFields[i]);
-#ifdef DEBUG
-			cout<<sub5p.size()<<"\t"<<substiString[i]<<"\t"<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
-#endif
-		    }	
 
-
-		    for(int b=0;b<4;b++){		
-			double sum =0.0;
-			for(int a=0;a<3;a++){		
-			    int idx = b*3+a;
-			    sum+=toadd.s[idx];
+		    while ( getline (deam3pFileStWiMeth,line)){
+			vector<string> fields = allTokens(line,'\t');
+			vector<string> firstFields;
+			for(unsigned int i=1;i<fields.size();i++){
+			    vector<string> fields2 = allTokens(fields[i],' ');
+			    firstFields.push_back(fields2[0]);
 			}
-			if(sum>1.0){
-			    cerr<<"Problem with line "<<line<<" in file "<<deam5File<<" the sum of the substitution probabilities exceeds 1"<<endl;
+	    
+			if(firstFields.size()!=12){
+			    cerr << "line from deamination does not have 12 fields "<<line<<" "<<firstFields.size()<<endl;
 			    return 1;
 			}
-		    }
-
-		    sub5p.push_back(toadd);
-		    //return 1;
-		}
-	
-		deam5pFileSt.close();
-	    }else{
-		cerr << "Unable to open 5p deamination file "<<deam5File<<endl;
-		return 1;
-	    }
-
-
-	    ///////////////////////////////////////
-	    //READ file with 3p deamination rates /
-	    ///////////////////////////////////////
-	    igzstream deam3pFileSt;
-
-	    deam3pFileSt.open(deam3File.c_str(), ios::in);
-
-
-	    if (deam3pFileSt.good()){
-		//header
-		if ( !getline (deam3pFileSt,line)){
-		    cerr << "Parsing error for 3p deamination file "<<deam3File<<endl;
-		    return 1;
-		}
-
-		while ( getline (deam3pFileSt,line)){
-		    vector<string> fields = allTokens(line,'\t');
-		    vector<string> firstFields;
-		    for(unsigned int i=1;i<fields.size();i++){
-			vector<string> fields2 = allTokens(fields[i],' ');
-			firstFields.push_back(fields2[0]);
-		    }
 	    
-		    if(firstFields.size()!=12){
-			cerr << "line from deamination does not have 12 fields "<<line<<" "<<firstFields.size()<<endl;
-			return 1;
-		    }
-	    
-		    substitutionRates toadd;
-		    for(unsigned int i=0;i<firstFields.size();i++){		
-			toadd.s[i]=destringify<double>(firstFields[i]);
+			substitutionRates toadd;
+			for(unsigned int i=0;i<firstFields.size();i++){		
+			    toadd.s[i]=destringify<double>(firstFields[i]);
 
 #ifdef DEBUG
-			cout<<sub3p.size()<<"\t"<<substiString[i]<<"\t"<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
+			    cerr<<sub3pWiMeth.size()<<"\t"<<substiString[i]<<"\t"<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
 #endif
 
-			//cout<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
-		    }	
+			    //cout<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
+			}	
 
-		    for(int b=0;b<4;b++){		
-			double sum =0.0;
-			for(int a=0;a<3;a++){		
-			    int idx = b*3+a;
-			    sum+=toadd.s[idx];
+			for(int b=0;b<4;b++){		
+			    double sum =0.0;
+			    for(int a=0;a<3;a++){		
+				int idx = b*3+a;
+				sum+=toadd.s[idx];
+			    }
+			    if(sum>1.0){
+				cerr<<"Problem with line "<<line<<" in file "<<deam3FileWiMeth<<" the sum of the substitution probabilities exceeds 1"<<endl;
+				return 1;
+			    }
 			}
-			if(sum>1.0){
-			    cerr<<"Problem with line "<<line<<" in file "<<deam3File<<" the sum of the substitution probabilities exceeds 1"<<endl;
-			    return 1;
-			}
-		    }
 		
 
-		    sub3p.push_back(toadd);
-		    //return 1;
+			sub3pWiMeth.push_back(toadd);
+			//return 1;
+		    }
+	
+		    deam3pFileStWiMeth.close();
+		}else{
+		    cerr << "Unable to open 3p deamination file "<<deam3FileWiMeth<<endl;
+		    return 1;
 		}
-	
-		deam3pFileSt.close();
-	    }else{
-		cerr << "Unable to open 3p deamination file "<<deam3File<<endl;
-		return 1;
-	    }
 
-	    // for(unsigned int i=0;i<sub3p.size();i++){		
-	    // 	cout<<i<<"\t"<<arrayToString(sub3p[i].s,12,"\t")<<endl;
-	    // }
-	    reverse(sub3p.begin(),sub3p.end());
+		reverse(sub3pWiMeth.begin(),sub3pWiMeth.end());
+
+
+
+		//No methylation
+
+		string deam5FileNoMeth;
+		string deam3FileNoMeth;
+		
+		deam5FileNoMeth = matrixFileNoMeth+"5.dat";
+		deam3FileNoMeth = matrixFileNoMeth+"3.dat";	
+
+#ifdef DEBUG
+		cerr<<"Files deamination without methylation"<<endl;
+		cerr<<deam5FileNoMeth<<endl;
+		cerr<<deam3FileNoMeth<<endl;
+#endif
+
+		//////////////////////////////////////////////////////////
+		//READ file with 5p deamination rates without methylation/
+		//////////////////////////////////////////////////////////
+		igzstream deam5pFileStNoMeth;
+
+		deam5pFileStNoMeth.open(deam5FileNoMeth.c_str(), ios::in);
+
+
+		if (deam5pFileStNoMeth.good()){
+		    //header
+		    if ( !getline (deam5pFileStNoMeth,line)){
+			cerr << "Parsing error for 5p deamination file "<<deam5FileNoMeth<<endl;
+			return 1;
+		    }
+
+		    while ( getline (deam5pFileStNoMeth,line)){
+			vector<string> fields = allTokens(line,'\t');
+			vector<string> firstFields;
+			for(unsigned int i=1;i<fields.size();i++){
+			    vector<string> fields2 = allTokens(fields[i],' ');
+			    firstFields.push_back(fields2[0]);
+			}
+	    
+			if(firstFields.size()!=12){
+			    cerr << "line from deamination does not have 12 fields "<<line<<" "<<firstFields.size()<<endl;
+			    return 1;
+			}
+	    
+			substitutionRates toadd;
+			for(unsigned int i=0;i<firstFields.size();i++){		
+			    toadd.s[i]=destringify<double>(firstFields[i]);
+#ifdef DEBUG
+			    cerr<<sub5pNoMeth.size()<<"\t"<<substiString[i]<<"\t"<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
+#endif
+			}	
+
+
+			for(int b=0;b<4;b++){		
+			    double sum =0.0;
+			    for(int a=0;a<3;a++){		
+				int idx = b*3+a;
+				sum+=toadd.s[idx];
+			    }
+			    if(sum>1.0){
+				cerr<<"Problem with line "<<line<<" in file "<<deam5FileNoMeth<<" the sum of the substitution probabilities exceeds 1"<<endl;
+				return 1;
+			    }
+			}
+
+			sub5pNoMeth.push_back(toadd);
+			//return 1;
+		    }
 	
-	    // for(unsigned int i=0;i<sub3p.size();i++){		
-	    // 	cout<<i<<"\t"<<arrayToString(sub3p[i].s,12,"\t")<<endl;
-	    // }
+		    deam5pFileStNoMeth.close();
+		}else{
+		    cerr << "Unable to open 5p deamination file "<<deam5FileNoMeth<<endl;
+		    return 1;
+		}
+
+		//////////////////////////////////////////////////////////
+		//READ file with 3p deamination rates without methylation/
+		//////////////////////////////////////////////////////////
+		igzstream deam3pFileStNoMeth;
+
+		deam3pFileStNoMeth.open(deam3FileNoMeth.c_str(), ios::in);
+
+
+		if (deam3pFileStNoMeth.good()){
+		    //header
+		    if ( !getline (deam3pFileStNoMeth,line)){
+			cerr << "Parsing error for 3p deamination file "<<deam3FileNoMeth<<endl;
+			return 1;
+		    }
+
+		    while ( getline (deam3pFileStNoMeth,line)){
+			vector<string> fields = allTokens(line,'\t');
+			vector<string> firstFields;
+			for(unsigned int i=1;i<fields.size();i++){
+			    vector<string> fields2 = allTokens(fields[i],' ');
+			    firstFields.push_back(fields2[0]);
+			}
+	    
+			if(firstFields.size()!=12){
+			    cerr << "line from deamination does not have 12 fields "<<line<<" "<<firstFields.size()<<endl;
+			    return 1;
+			}
+	    
+			substitutionRates toadd;
+			for(unsigned int i=0;i<firstFields.size();i++){		
+			    toadd.s[i]=destringify<double>(firstFields[i]);
+
+#ifdef DEBUG
+			    cerr<<sub3pNoMeth.size()<<"\t"<<substiString[i]<<"\t"<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
+#endif
+
+			    //cout<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
+			}	
+
+			for(int b=0;b<4;b++){		
+			    double sum =0.0;
+			    for(int a=0;a<3;a++){		
+				int idx = b*3+a;
+				sum+=toadd.s[idx];
+			    }
+			    if(sum>1.0){
+				cerr<<"Problem with line "<<line<<" in file "<<deam3FileNoMeth<<" the sum of the substitution probabilities exceeds 1"<<endl;
+				return 1;
+			    }
+			}
+		
+
+			sub3pNoMeth.push_back(toadd);
+			//return 1;
+		    }
+	
+		    deam3pFileStNoMeth.close();
+		}else{
+		    cerr << "Unable to open 3p deamination file "<<deam3FileNoMeth<<endl;
+		    return 1;
+		}
+
+		reverse(sub3pNoMeth.begin(),sub3pNoMeth.end());
+		
+
+		//end 	    if(matrixFileSpecifiedWithMeth || matrixFileSpecifiedNoMeth){
+	    }//specified methylation
+	    else{
+		string deam5File;
+		string deam3File;
+	
+		if(matrixFileSpecified){
+		    deam5File = matrixFile+"5.dat";
+		    deam3File = matrixFile+"3.dat";	
+		}else{   
+		    deam5File = getCWD(argv[0])+ "matrices/"+matrix+"-5.dat";
+		    deam3File = getCWD(argv[0])+ "matrices/"+matrix+"-3.dat";	
+		}
+		
+		string line;
+
+		///////////////////////////////////////
+		//READ file with 5p deamination rates /
+		///////////////////////////////////////
+		igzstream deam5pFileSt;
+
+		deam5pFileSt.open(deam5File.c_str(), ios::in);
+
+
+		if (deam5pFileSt.good()){
+		    //header
+		    if ( !getline (deam5pFileSt,line)){
+			cerr << "Parsing error for 5p deamination file "<<deam5File<<endl;
+			return 1;
+		    }
+
+		    while ( getline (deam5pFileSt,line)){
+			vector<string> fields = allTokens(line,'\t');
+			vector<string> firstFields;
+			for(unsigned int i=1;i<fields.size();i++){
+			    vector<string> fields2 = allTokens(fields[i],' ');
+			    firstFields.push_back(fields2[0]);
+			}
+	    
+			if(firstFields.size()!=12){
+			    cerr << "line from deamination does not have 12 fields "<<line<<" "<<firstFields.size()<<endl;
+			    return 1;
+			}
+	    
+			substitutionRates toadd;
+			for(unsigned int i=0;i<firstFields.size();i++){		
+			    toadd.s[i]=destringify<double>(firstFields[i]);
+#ifdef DEBUG
+			    cerr<<sub5p.size()<<"\t"<<substiString[i]<<"\t"<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
+#endif
+			}	
+
+
+			for(int b=0;b<4;b++){		
+			    double sum =0.0;
+			    for(int a=0;a<3;a++){		
+				int idx = b*3+a;
+				sum+=toadd.s[idx];
+			    }
+			    if(sum>1.0){
+				cerr<<"Problem with line "<<line<<" in file "<<deam5File<<" the sum of the substitution probabilities exceeds 1"<<endl;
+				return 1;
+			    }
+			}
+
+			sub5p.push_back(toadd);
+			//return 1;
+		    }
+	
+		    deam5pFileSt.close();
+		}else{
+		    cerr << "Unable to open 5p deamination file "<<deam5File<<endl;
+		    return 1;
+		}
+
+
+		///////////////////////////////////////
+		//READ file with 3p deamination rates /
+		///////////////////////////////////////
+		igzstream deam3pFileSt;
+
+		deam3pFileSt.open(deam3File.c_str(), ios::in);
+
+
+		if (deam3pFileSt.good()){
+		    //header
+		    if ( !getline (deam3pFileSt,line)){
+			cerr << "Parsing error for 3p deamination file "<<deam3File<<endl;
+			return 1;
+		    }
+
+		    while ( getline (deam3pFileSt,line)){
+			vector<string> fields = allTokens(line,'\t');
+			vector<string> firstFields;
+			for(unsigned int i=1;i<fields.size();i++){
+			    vector<string> fields2 = allTokens(fields[i],' ');
+			    firstFields.push_back(fields2[0]);
+			}
+	    
+			if(firstFields.size()!=12){
+			    cerr << "line from deamination does not have 12 fields "<<line<<" "<<firstFields.size()<<endl;
+			    return 1;
+			}
+	    
+			substitutionRates toadd;
+			for(unsigned int i=0;i<firstFields.size();i++){		
+			    toadd.s[i]=destringify<double>(firstFields[i]);
+
+#ifdef DEBUG
+			    cerr<<sub3p.size()<<"\t"<<substiString[i]<<"\t"<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
+#endif
+
+			    //cerr<<toadd.s[i]<<"\t"<<firstFields[i]<<endl;
+			}	
+
+			for(int b=0;b<4;b++){		
+			    double sum =0.0;
+			    for(int a=0;a<3;a++){		
+				int idx = b*3+a;
+				sum+=toadd.s[idx];
+			    }
+			    if(sum>1.0){
+				cerr<<"Problem with line "<<line<<" in file "<<deam3File<<" the sum of the substitution probabilities exceeds 1"<<endl;
+				return 1;
+			    }
+			}
+		
+
+			sub3p.push_back(toadd);
+			//return 1;
+		    }
+	
+		    deam3pFileSt.close();
+		}else{
+		    cerr << "Unable to open 3p deamination file "<<deam3File<<endl;
+		    return 1;
+		}
+		cerr<<"test2"<<endl;
+		for(unsigned int i=0;i<sub3p.size();i++){		
+		    cerr<<i<<"\t"<<arrayToString(sub3p[i].s,12,"\t")<<endl;
+		}
+		reverse(sub3p.begin(),sub3p.end());
+	
+		for(unsigned int i=0;i<sub3p.size();i++){		
+		    cerr<<i<<"\t"<<arrayToString(sub3p[i].s,12,"\t")<<endl;
+		}
+
+	    }
 	}
+
+	//end if(!useBriggs && !useBriggsss){    
     }else{
 	//no file to read
     }
@@ -777,7 +1130,10 @@ int main (int argc, char *argv[]) {
 	    def = *(fo->getID());
 	    seq = *(fo->getSeq());
 	}
-	transform(seq.begin(), seq.end(),seq.begin(), ::toupper);
+
+	if(!(matrixFileSpecifiedWithMeth || matrixFileSpecifiedNoMeth)){	
+	    transform(seq.begin(), seq.end(),seq.begin(), ::toupper);
+	}
 
 	bool deaminated=false;
 	vector<int> deamPos;
@@ -794,7 +1150,10 @@ int main (int argc, char *argv[]) {
 	/////////////////////////
 
 	if(useBriggsss){
-	    
+#ifdef DEBUG
+		cerr<<"Briggs single-strand"<<endl;
+#endif
+
 	    int overhang5p=overhanggeo5p(generator);
 	    int overhang3p=overhanggeo3p(generator);
 
@@ -869,7 +1228,7 @@ int main (int argc, char *argv[]) {
 		    //in 5p overhang
 		    if((i+1)<=overhang5p){
 #ifdef DEBUG
-			cout<<"5p"<<endl;
+			cerr<<"5p"<<endl;
 #endif
 			if(seq[i] == 'C'){
 			    if( randomProb() < sBrgs5p ){
@@ -883,7 +1242,7 @@ int main (int argc, char *argv[]) {
 			//in 3p overhang
 			if((int(seq.size())-i)<=overhang3p){
 #ifdef DEBUG
-			    cout<<"3p"<<endl;
+			    cerr<<"3p"<<endl;
 #endif
 			    if(seq[i] == 'C'){
 				if( randomProb() < sBrgs3p ){
@@ -894,7 +1253,7 @@ int main (int argc, char *argv[]) {
 			    }
 			}else{ //in double strand
 #ifdef DEBUG
-			    cout<<"dd"<<endl;
+			    cerr<<"dd"<<endl;
 #endif
 			    if(seq[i] == 'C'){
 				if( randomProb() < dBrgs ){
@@ -926,6 +1285,10 @@ int main (int argc, char *argv[]) {
 
 	}else{//not briggs single strand
 
+#ifdef DEBUG
+		cerr<<"Briggs double-strand"<<endl;
+#endif
+
 	    if(useBriggs){
 		int overhang5p=overhang(generator);
 		int overhang3p=overhang(generator);
@@ -950,7 +1313,7 @@ int main (int argc, char *argv[]) {
 		    //Placing a nick (maybe)
 		    for(int i=0;i<int(seq.size());i++){
 #ifdef DEBUG
-			cout<<i<<"\t"<<placedNick<<endl;
+			cerr<<i<<"\t"<<placedNick<<endl;
 #endif
 			if(!placedNick)
 			    if(randomProb() < vBrgs){ //nick is present
@@ -964,7 +1327,7 @@ int main (int argc, char *argv[]) {
 			    //in 5p overhang
 			    if((i+1)<=overhang5p){
 #ifdef DEBUG
-				cout<<"5pn"<<endl;
+				cerr<<"5pn"<<endl;
 #endif
 				if(seq[i] == 'C'){
 				    if( randomProb() < sBrgs ){
@@ -978,7 +1341,7 @@ int main (int argc, char *argv[]) {
 				//in 3p overhang
 				if((int(seq.size())-i)<=overhang3p){
 #ifdef DEBUG
-				    cout<<"3pn"<<endl;
+				    cerr<<"3pn"<<endl;
 #endif
 				    if(seq[i] == 'G'){
 					if( randomProb() < sBrgs ){
@@ -989,7 +1352,7 @@ int main (int argc, char *argv[]) {
 				    }
 				}else{ //in double strand
 #ifdef DEBUG
-				    cout<<"ddn"<<endl;
+				    cerr<<"ddn"<<endl;
 #endif						    
 				    if(seq[i] == 'G'){
 					if( randomProb() < dBrgs ){
@@ -1008,7 +1371,7 @@ int main (int argc, char *argv[]) {
 			    //in 5p overhang
 			    if((i+1)<=overhang5p){
 #ifdef DEBUG
-				cout<<"5p"<<endl;
+				cerr<<"5p"<<endl;
 #endif
 				if(seq[i] == 'C'){
 				    if( randomProb() < sBrgs ){
@@ -1022,7 +1385,7 @@ int main (int argc, char *argv[]) {
 				//in 3p overhang
 				if((int(seq.size())-i)<=overhang3p){
 #ifdef DEBUG
-				    cout<<"3p"<<endl;
+				    cerr<<"3p"<<endl;
 #endif
 				    if(seq[i] == 'G'){
 					if( randomProb() < sBrgs ){
@@ -1033,7 +1396,7 @@ int main (int argc, char *argv[]) {
 				    }
 				}else{ //in double strand
 #ifdef DEBUG
-				    cout<<"dd"<<endl;
+				    cerr<<"dd"<<endl;
 #endif
 				    if(seq[i] == 'C'){
 					if( randomProb() < dBrgs ){
@@ -1066,147 +1429,323 @@ int main (int argc, char *argv[]) {
 
 	    }else{//no briggs
 
-		if(matrixFileSpecified){
-		
-		    for(int i=0;i<int(seq.size());i++){
-			if(!isResolvedDNA(seq[i]))
-			    continue;
-			double sumProb [5];
-			double _sumProb[5];
+#ifdef DEBUG
+		cerr<<"matrixFileSpecified         "<<matrixFileSpecified<<endl;
+		cerr<<"matrixFileSpecifiedNoMeth   "<<matrixFileSpecifiedNoMeth<<endl;
+		cerr<<"matrixFileSpecifiedWithMeth "<<matrixFileSpecifiedWithMeth<<endl;
 
-			sumProb[0]  = 0.0;
-			_sumProb[0] = 0.0;
+#endif
+
+		if(matrixFileSpecified         ||
+		   matrixFileSpecifiedNoMeth   ||
+		   matrixFileSpecifiedWithMeth ){
+		
+		    if(!matrixFileSpecified  ){
+			//Methylation is taken into account
+
+#ifdef DEBUG
+			cerr<<"Methylation lastRowMatrix="<<lastRowMatrix<<endl;
+#endif
+
+			for(int i=0;i<int(seq.size());i++){
+			    char originalBase = toupper(seq[i]);
+			    bool isMethylated = (originalBase != seq[i]);
+			    //cerr<<originalBase<<"\t"<<seq[i]<<endl;
+			    vector<substitutionRates> * sub5pToUse;
+			    vector<substitutionRates> * sub3pToUse;
+
+			    if(isMethylated){
+				sub5pToUse = &sub5pWiMeth ;
+				sub3pToUse = &sub3pWiMeth ;
+			    }else{
+				sub5pToUse = &sub5pNoMeth ;
+				sub3pToUse = &sub3pNoMeth ;
+			    }
+			    
+			    if(!isResolvedDNA(originalBase))
+				continue;
+
+			    double sumProb [5];
+			    double _sumProb[5];
+
+			    sumProb[0]  = 0.0;
+			    _sumProb[0] = 0.0;
 		     
 
-			//5p
-			if(i<(int(seq.size())/2)){
-			    int b = baseResolved2int(seq[i]);
-			    double sum=0.0;
-			    for(int a=0;a<4;a++){
-				if(a==b)
-				    continue;
-				int idx;
-				if(a<b)
-				    idx = b*3+a;
-				else
-				    idx = b*3+(a-1);			     
-				sum += sub5p[i].s[idx];
-				_sumProb[a+1] = sub5p[i].s[idx];
-			    }
-			    _sumProb[b+1] = 1.0 - sum;
+			    //5p
+			    if(i<(int(seq.size())/2)){
+				int b = baseResolved2int(originalBase);
+				double sum=0.0;
+				
+				int iToUseSub5 = i;
+				if(iToUseSub5>=int(sub5pToUse->size())){
+				    if(lastRowMatrix){
+					iToUseSub5 = int(sub5pToUse->size())-1;
+				    }else{
+					continue;
+				    }
+				}
 
-			    double s=0;
-			    for(int a=0;a<5;a++){			     
-				s += _sumProb[a];
-				sumProb[a]  = s;
-			    }
+				for(int a=0;a<4;a++){
+				    if(a==b)
+					continue;
+				    int idx;
+				    if(a<b)
+					idx = b*3+a;
+				    else
+					idx = b*3+(a-1);			     
+				    sum           += sub5pToUse->at(iToUseSub5).s[idx];
+				    _sumProb[a+1]  = sub5pToUse->at(iToUseSub5).s[idx];
+				}
+				_sumProb[b+1] = 1.0 - sum;
+
+				double s=0;
+				for(int a=0;a<5;a++){			     
+				    s += _sumProb[a];
+				    sumProb[a]  = s;
+				}
 
 #ifdef DEBUG
-			    for(int a=0;a<5;a++){
-				cout<<"5p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<"XACGT"[a]<<"\t"<<_sumProb[a]<<endl;
-			    }
+				for(int a=0;a<5;a++){
+				    cerr<<"M5p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<iToUseSub5<<"\t"<<"XACGT"[a]<<"\t"<<_sumProb[a]<<"\t"<<isMethylated<<endl;
+				}
 #endif
 			 
 
 			 
-			    double p = randomProb();
-			    //bool f=false;
-			    for(int a=0;a<4;a++){
-				if( (sumProb[a]    <= p ) 
-				    &&
-				    (sumProb[a+1]  >= p ) ){				 
+				double p = randomProb();
+				//bool f=false;
+				for(int a=0;a<4;a++){
+				    if( (sumProb[a]    <= p ) 
+					&&
+					(sumProb[a+1]  >= p ) ){				 
 
-				    seq[i] = "ACGT"[a];
-				    //f=true;
-				    if(a!=b){
-					deamPos.push_back(i+1);
-					deaminated=true;
+					seq[i] = "ACGT"[a];
+					//f=true;
+					if(a!=b){
+					    deamPos.push_back(i+1);
+					    deaminated=true;
+					}
+
+					break;
 				    }
-
-				    break;
 				}
-			    }
 
-			    // if(b==1 && 
-			    //    i==0){
-			    //     for(int a=0;a<5;a++){
-			    // 	 cout<<"test\t5p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<"XACGT"[a]<<"\t"<<sumProb[a]<<"\t"<<p<<"\t"<<vectorToString(deamPos)<<endl;
-			    //     }
-			    //     cout<<"deam\t5p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<seq[i]<<"\t"<<p<<"\t"<<vectorToString(deamPos)<<endl;			     
-			    // }
-
-
-			    // if(b==1){
-			    //     for(int a=0;a<5;a++){
-			    // 	 cout<<"5p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<"ACGT"[b]<<"\t"<<seq[i]<<endl;
-			    //     }
-			    // }
 			 			 
-			}
-			//3p
-			else{
-
-			    int b = baseResolved2int(seq[i]);
-			    double sum=0.0;
-			    for(int a=0;a<4;a++){
-				if(a==b)
-				    continue;
-				int idx;
-				if(a<b)
-				    idx = b*3+a;
-				else
-				    idx = b*3+(a-1);			     
-				sum += sub3p[ int(seq.size())-i-1 ].s[idx];
-				_sumProb[a+1] = sub3p[ int(seq.size())-i-1 ].s[idx];
 			    }
-			    _sumProb[b+1] = 1.0 - sum;
+			    //3p
+			    else{
+
+				int b = baseResolved2int(originalBase);
+				double sum=0.0;
+
+				int iToUseSub3 = int(seq.size())-i-1;
+				if(iToUseSub3>=int(sub3pToUse->size())){
+				    if(lastRowMatrix){
+					iToUseSub3 = int(sub3pToUse->size())-1;
+				    }else{
+					continue;
+				    }
+				}
 
 
-			    double s=0;
-			    for(int a=0;a<5;a++){			     
-				s += _sumProb[a];
-				sumProb[a]  = s;
-			    }
+				for(int a=0;a<4;a++){
+				    if(a==b)
+					continue;
+				    int idx;
+				    if(a<b)
+					idx = b*3+a;
+				    else
+					idx = b*3+(a-1);			     
+				    sum           += sub3pToUse->at( iToUseSub3 ).s[idx];
+				    _sumProb[a+1]  = sub3pToUse->at( iToUseSub3 ).s[idx];
+				}
+				_sumProb[b+1] = 1.0 - sum;
+
+
+				double s=0;
+				for(int a=0;a<5;a++){			     
+				    s += _sumProb[a];
+				    sumProb[a]  = s;
+				}
 			 
 #ifdef DEBUG
-			    for(int a=0;a<5;a++){
-				cout<<"3p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t3p\t"<<"XACGT"[a]<<"\t"<<sumProb[a]<<endl;
-			    }
+				for(int a=0;a<5;a++){
+				    cerr<<"M3p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<iToUseSub3<<"\t3p\t"<<"XACGT"[a]<<"\t"<<sumProb[a]<<"\t"<<isMethylated<<endl;
+				}
 #endif
 
 
 			 
-			    double p = randomProb();
-			    //bool f=false;
-			    for(int a=0;a<4;a++){
-				if( (sumProb[a]    <= p ) 
-				    &&
-				    (sumProb[a+1]  >= p ) ){				 
-				    seq[i] = "ACGT"[a];
-				    if(a!=b){
-					deamPos.push_back( -(int(seq.size())-i ) );
-					deaminated=true;
+				double p = randomProb();
+				//bool f=false;
+				for(int a=0;a<4;a++){
+				    if( (sumProb[a]    <= p ) 
+					&&
+					(sumProb[a+1]  >= p ) ){				 
+					seq[i] = "ACGT"[a];
+					if(a!=b){
+					    deamPos.push_back( -(int(seq.size())-i ) );
+					    deaminated=true;
+					}
+					//f=true;
+					break;
 				    }
-				    //f=true;
-				    break;
 				}
+
+
+
 			    }
-
-			    // if(b==1 && 
-			    //    i==(int(seq.size())-1) ){
-
-			    //     for(int a=0;a<5;a++){
-			    // 	 cout<<"test\t3p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<"XACGT"[a]<<"\t"<<sumProb[a]<<"\t"<<p<<"\t"<<vectorToString(deamPos)<<endl;
-			    //     }
-
-			    //     cout<<"deam\t3p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<seq[i]<<"\t"<<p<<"\t"<<vectorToString(deamPos)<<endl; 	     
-			    // }
-
-
-			}
+			}//end for
 		    }
 
-		}else{ //no matrix specified
+		    //else, we have a simple matrix no methylation
+		    else{
+			for(int i=0;i<int(seq.size());i++){
+			    if(!isResolvedDNA(seq[i]))
+				continue;
+			    double sumProb [5];
+			    double _sumProb[5];
+
+			    sumProb[0]  = 0.0;
+			    _sumProb[0] = 0.0;
+			    
+
+			    //5p
+			    if(i<(int(seq.size())/2)){
+				int b = baseResolved2int(seq[i]);
+				double sum=0.0;
+				
+				
+				int iToUseSub5 = i;
+				if(iToUseSub5>=int(sub5p.size())){
+				    if(lastRowMatrix){
+					iToUseSub5 = int(sub5p.size())-1;
+				    }else{
+					continue;
+				    }
+				}
+
+
+				for(int a=0;a<4;a++){
+				    if(a==b)
+					continue;
+				    int idx;
+				    if(a<b)
+					idx = b*3+a;
+				    else
+					idx = b*3+(a-1);			     
+				    sum += sub5p[iToUseSub5].s[idx];
+				    _sumProb[a+1] = sub5p[iToUseSub5].s[idx];
+				}
+				_sumProb[b+1] = 1.0 - sum;
+
+				double s=0;
+				for(int a=0;a<5;a++){			     
+				    s += _sumProb[a];
+				    sumProb[a]  = s;
+				}
+
+#ifdef DEBUG
+				for(int a=0;a<5;a++){
+				    cerr<<"5p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<iToUseSub5<<"\t"<<"XACGT"[a]<<"\t"<<_sumProb[a]<<endl;
+				}
+#endif
+			 
+
+			 
+				double p = randomProb();
+				//bool f=false;
+				for(int a=0;a<4;a++){
+				    if( (sumProb[a]    <= p ) 
+					&&
+					(sumProb[a+1]  >= p ) ){				 
+
+					seq[i] = "ACGT"[a];
+					//f=true;
+					if(a!=b){
+					    deamPos.push_back(i+1);
+					    deaminated=true;
+					}
+
+					break;
+				    }
+				}
+
+			 			 
+			    }
+			    //3p
+			    else{
+
+				int b = baseResolved2int(seq[i]);
+				double sum=0.0;
+
+				int iToUseSub3 = int(seq.size())-i-1;
+				if(iToUseSub3>=int(sub3p.size())){
+				    if(lastRowMatrix){
+					iToUseSub3 = int(sub3p.size())-1;
+				    }else{
+					continue;
+				    }
+				}
+
+
+				for(int a=0;a<4;a++){
+				    if(a==b)
+					continue;
+				    int idx;
+				    if(a<b)
+					idx = b*3+a;
+				    else
+					idx = b*3+(a-1);			     
+				    sum += sub3p[ iToUseSub3 ].s[idx];
+				    _sumProb[a+1] = sub3p[ iToUseSub3 ].s[idx];
+				}
+				_sumProb[b+1] = 1.0 - sum;
+
+
+				double s=0;
+				for(int a=0;a<5;a++){			     
+				    s += _sumProb[a];
+				    sumProb[a]  = s;
+				}
+			 
+#ifdef DEBUG
+				for(int a=0;a<5;a++){
+				    cerr<<"3p\t"<<i<<"\t"<<(int(seq.size())-i-1)<<"\t"<<(iToUseSub3)<<"\t3p\t"<<"XACGT"[a]<<"\t"<<sumProb[a]<<endl;
+				}
+#endif
+
+
+			 
+				double p = randomProb();
+				//bool f=false;
+				for(int a=0;a<4;a++){
+				    if( (sumProb[a]    <= p ) 
+					&&
+					(sumProb[a+1]  >= p ) ){				 
+					seq[i] = "ACGT"[a];
+					if(a!=b){
+					    deamPos.push_back( -(int(seq.size())-i ) );
+					    deaminated=true;
+					}
+					//f=true;
+					break;
+				    }
+				}
+
+
+
+			    }
+			}//end for
+		    }//end if matrixFileSpecified
+
+		    //no matrix specified
+		}else{ 
+
+#ifdef DEBUG
+		    cerr<<"matrix file, singleDeam="<<singleDeam<<" doubleDeam="<<doubleDeam<<endl;
+#endif
 
 		    //MATRIX FILE
 		    if(singleDeam){ //Single strand will have C->T damage on both ends

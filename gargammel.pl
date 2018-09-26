@@ -99,6 +99,8 @@ sub runcmdforce{
 
 
 
+
+
 sub runcmdReturnOutput {
   my $command = join ' ', @_;
   reverse ($_ = qx{$command 2>&1}, $? >> 8);
@@ -154,6 +156,7 @@ sub listdirFai {
 sub listdirFa {
   my ($dirtolist) = @_;
   my @arrayToReturn;
+
   opendir(DIR,$dirtolist) or die "Cannot open directory ".$!;
   while(my $dir = readdir(DIR)){
     if($dir eq "."){
@@ -165,7 +168,7 @@ sub listdirFa {
     }
 
     if(-f $dirtolist."".$dir){
-      #print "dir ".$dirtolist."".$dir."\n";
+
       if($dir =~ /.fa$/       ||
 	 $dir =~ /.fa.gz$/    ||
 	 $dir =~ /.fna$/      ||
@@ -173,6 +176,33 @@ sub listdirFa {
 	 $dir =~ /.fasta.gz$/ ){
 	push(@arrayToReturn,$dirtolist."".$dir);
       }
+    }
+  }
+  close(DIR);
+  return @arrayToReturn;
+}
+
+
+sub listdirCdir {
+  my ($dirtolist) = @_;
+  my @arrayToReturn;
+  opendir(DIR,$dirtolist) or die "Cannot open directory ".$!;
+  while(my $dir = readdir(DIR)){
+    if($dir eq "."){
+      next;
+    }
+
+    if($dir eq ".."){
+      next;
+    }
+
+    if(-d $dirtolist."".$dir){
+      #print "dir ".$dirtolist."".$dir."\n";
+      #if($dir =~ /^C[0-9]+$/        ){
+      push(@arrayToReturn,$dirtolist."".$dir);
+      #}else{
+
+
     }
   }
   close(DIR);
@@ -275,10 +305,10 @@ sub usage
 		-l\t[length]\t\tGenerate fragments of fixed length  (default: ".$fraglength.")
 		-s\t[file]\t\t\tOpen file with size distribution (one fragment length per line)
 		-f\t[file]\t\t\tOpen file with size frequency in the following format:
-				     length[TAB]freq	ex:
-				     40	0.0525
-				     41	0.0491
-				     ...
+				     \t\tlength[TAB]freq	ex:
+				     \t\t40	0.0525
+				     \t\t41	0.0491
+				     \t\t...
 
 		Length options:
 		\t--loc\t[file]\t\tLocation for lognormal distribution (default none)
@@ -286,9 +316,11 @@ sub usage
   " \tFragment size limit:
 		--minsize\t[length]\tMinimum fragments length (default: ".$minsize.")
                 --maxsize\t[length]\tMaximum fragments length (default: ".$maxsize.")\n".
-
-  " \t\t--uniq\t\t\tMake sure that the fragments have unique names (default: not used)\n".
-
+  "\n".
+  " \tFragment methylation:
+		--methyl\t\t\tAllow for lowercase C and G to denote
+                \t\t\t\tmethylated cytosines on the + and - strand respectively
+                \t\t\t\t(default: not used)\n".
   "\n".
   " Deamination\n".
   " ===================\n".
@@ -296,14 +328,15 @@ sub usage
   " either one of these options:\n".
 
   "\t-mapdamage\t[mis.txt] [protocol]\tRead the miscorporation file [mis.txt]
-                           	       produced by mapDamage
-		                       [protocol] can be either \"single\" or \"double\" (without quotes)
-		                       Single strand will have C->T damage on both ends
-		                       Double strand will have and C->T at the 5' end and G->A damage at the 3' end".
-
+                           	       \t\tproduced by mapDamage
+		                       \t\t[protocol] can be either \"single\" or \"double\" (without quotes)
+		                       \t\tSingle strand will have C->T damage on both ends
+		                       \t\tDouble strand will have and C->T at the 5' end and G->A damage at the 3' end".
+  "\n".
   "\t-matfile\t[matrix file prefix]\tRead the matrix file of substitutions
 		                                Provide the prefix only, both files must end with
 		                               	5.dat and 3.dat\n".
+
 
   "\t-damage\t\t[v,l,d,s]	  \tFor the Briggs et al. 2007 model
 		                  \t\tThe parameters must be comma-separated e.g.: -damage 0.03,0.4,0.01,0.3
@@ -311,6 +344,7 @@ sub usage
 		                  \t\t\tl: length of overhanging ends (geometric parameter)
 		                  \t\t\td: prob. of deamination of Cs in double-stranded parts
 		                  \t\t\ts: prob. of deamination of Cs in single-stranded parts\n".
+
 
   "\n".
   " Alternatively, you can specify these options independently for the endogenous (e), bacterial (b)\n".
@@ -326,10 +360,18 @@ sub usage
 
   "\t-mapdamagec\t[mis.txt] [protocol]\tHuman contaminant mapDamage misincorporation file\n".
   "\t-matfilec\t[matrix file prefix]\tHuman contaminant matrix file of substitutions\n".
-  "\t-damagec\t[v,l,d,s]	  \tHuman contaminant Briggs parameters\n".
+  "\t-damagecd\t[v,l,d,s]	  \tHuman contaminant Briggs parameters\n".
 
   "\n please note that if you do specify deamination for one source but not for another, no deamination will be added\n".
 
+  "\n".
+  " If using --methyl, you can also specify different matrix file for methylated\n".
+  "\t-matfilenonmeth\t[matrix file prefix]\tRead the matrix file of substitutions for non-methylated Cs
+		                            \tProvide the prefix only, both files must end with
+		                            \t5.dat and 3.dat
+   \t-matfilemeth\t[matrix file prefix]\tRead the matrix file of substitutions for methylated Cs
+		                         \tProvide the prefix only, both files must end with
+		                         \t5.dat and 3.data".
 
   "\n".
   " Adapter and sequencing\n".
@@ -386,6 +428,9 @@ my $misincc;
 
 my @mapdamage;
 my $matfile;
+my $matfilenonmeth;
+my $matfilemeth;
+
 my $briggs;
 
 my @mapdamagee;
@@ -409,8 +454,11 @@ my $fa;
 my $sa;
 my $rl;
 
+my $methyl;
+my $dirWithChr = $ARGV[$#ARGV];
+
 usage() if ( @ARGV < 1 or
-	     ! GetOptions('help|?' => \$help, 'mock' => \$mock,'uniq' => \$uniq, 'se' => \$se, 'ss=s' => \$ss, 'distmis=i' => \$distmis, 'misince=s' => \$misince,'misincb=s' => \$misincb,'misincc=s' => \$misincc, 'comp=s' => \$comp,'mapdamage=s{2}' => \@mapdamage, 'mapdamagee=s{2}' => \@mapdamagee, 'mapdamageb=s{2}' => \@mapdamageb, 'mapdamagec=s{2}' => \@mapdamagec,'matfile=s' => \$matfile, 'damage=s' => \$briggs,'matfilee=s' => \$matfilee, 'damagee=s' => \$briggse,'matfileb=s' => \$matfileb, 'damageb=s' => \$briggsb,'matfilec=s' => \$matfilec, 'damagec=s' => \$briggsc,'o=s' => \$outputprefix, 'n=i' => \$numberOfFragments,'l=i' => \$fraglength, 's=s' => \$filefragsize, 'f=s' => \$filefragfreqsize, 'loc=s' => \$loc, 'fa=s' => \$fa, 'sa=s' => \$sa, 'rl=s' => \$rl, 'scale=s' => \$scale, 'c=f' => \$coverage, 'minsize=i' => \$minsize,'maxsize=i' => \$maxsize,'qs=i' => \$qs,'qs2=i' => \$qs2)
+	     ! GetOptions('help|?' => \$help, 'mock' => \$mock, 'methyl' => \$methyl, 'uniq' => \$uniq, 'se' => \$se, 'ss=s' => \$ss, 'distmis=i' => \$distmis, 'misince=s' => \$misince,'misincb=s' => \$misincb,'misincc=s' => \$misincc, 'comp=s' => \$comp,'mapdamage=s{2}' => \@mapdamage, 'mapdamagee=s{2}' => \@mapdamagee, 'mapdamageb=s{2}' => \@mapdamageb, 'mapdamagec=s{2}' => \@mapdamagec,'matfile=s' => \$matfile, 'damage=s' => \$briggs,'matfilee=s' => \$matfilee,'matfilenonmeth=s' => \$matfilenonmeth, ,'matfilemeth=s' => \$matfilemeth, 'damagee=s' => \$briggse,'matfileb=s' => \$matfileb, 'damageb=s' => \$briggsb,'matfilec=s' => \$matfilec, 'damagec=s' => \$briggsc,'o=s' => \$outputprefix, 'n=i' => \$numberOfFragments,'l=i' => \$fraglength, 's=s' => \$filefragsize, 'f=s' => \$filefragfreqsize, 'loc=s' => \$loc, 'fa=s' => \$fa, 'sa=s' => \$sa, 'rl=s' => \$rl, 'scale=s' => \$scale, 'c=f' => \$coverage, 'minsize=i' => \$minsize,'maxsize=i' => \$maxsize,'qs=i' => \$qs,'qs2=i' => \$qs2)
           or defined $help );
 
 if( !(defined $ss) ){
@@ -567,8 +615,10 @@ checkDeamParam($briggsc,$matfilec);
 
 
 
-if ( (defined $matfile   ) ||
-     (defined $briggs    ) ||
+if ( (defined $matfile          ) ||
+     (defined $matfilenonmeth   ) ||
+     (defined $matfilemeth      ) ||
+     (defined $briggs           ) ||
      (@mapdamage ) ) {
 
   if ( (defined $matfilee) ||
@@ -597,6 +647,37 @@ if ( (defined $matfile   ) ||
     $briggsb = $briggs;
   }
 
+  if(defined $matfilenonmeth){
+    if( not(defined $methyl) ){
+      die "Must define --methyl for the fragment selection\n";
+    }
+  }
+
+  if(defined $matfilemeth){
+    if( not(defined $methyl) ){
+      die "Must define --methyl for the fragment selection\n";
+    }
+  }
+
+  if( (not(defined $matfilenonmeth) &&
+       (   defined $matfilemeth) )
+      ||
+      (   (defined $matfilenonmeth) &&
+       not(defined $matfilemeth) )){
+    die "Must defined matrix file for both methylated and non-methylated";
+  }
+
+  if( (defined $matfilenonmeth) ||
+      (defined $matfilemeth   )  ){
+
+    if( (defined $matfilee) ||
+	(defined $matfileb) ||
+	(defined $matfilec)  ) {
+      die "Cannot specify as of yet, different deamination profiles for the endogenous, bacterial, contaminant and methylation deamination\n";
+    }
+
+  }
+
 
   if(@mapdamage){
     @mapdamagee = @mapdamage;
@@ -606,6 +687,19 @@ if ( (defined $matfile   ) ||
 
 
 }
+
+if( defined $methyl ){
+  if( not(defined $matfilenonmeth) ){
+    die "Must define --matfilenonmeth if methylation is used\n";
+  }
+}
+
+if( defined $methyl ){
+  if( not(defined $matfilemeth) ){
+    die "Must define --matfilemeth if methylation is used\n";
+  }
+}
+
 
 
 
@@ -681,7 +775,7 @@ if( ($compB+$compC+$compE) != 1){
 }
 
 
-my $dirWithChr = $ARGV[$#ARGV];
+
 if(substr($dirWithChr,length($dirWithChr)-1,1) ne "/"){
   $dirWithChr = $dirWithChr."/";
 }
@@ -713,9 +807,10 @@ if($arrayofdirs[0] ne $dirWithChr."bact/" ||
 ";
 }
 
-my @arrayofFilesbact = listdirFa( $arrayofdirs[0] );
-my @arrayofFilescont = listdirFa( $arrayofdirs[1] );
-my @arrayofFilesendo = listdirFa( $arrayofdirs[2] );
+my @arrayofFilesbact = listdirFa(   $arrayofdirs[0] );
+my @arrayofFilescont = listdirFa(   $arrayofdirs[1] );
+my @arrayofFilesendo = listdirFa(   $arrayofdirs[2] );
+my @arrayofCdirsendo = listdirCdir( $arrayofdirs[2] );
 
 my $sumB=0;
 my $sumC=0;
@@ -884,27 +979,113 @@ foreach my $s (@arrayofFilescontL){
 
 my $diploidMode=0;
 
-if ($compE>0) {			#if we have endogenous material
-  if ( ($#arrayofFilesendo+1) == 1) {
-    $diploidMode=0;
-  } else {
-    if ( ($#arrayofFilesendo+1) == 2) {
-      $diploidMode=1;
-    } else {
-      die "The endogenous directory must have 1 (haploid) or 2 (diploid) files, found: ".($#arrayofFilesendo+1)."";
-    }
-  }
+my $multiCellMode   =0;
+my $multiCellModeMAX=0;
 
+my @arrayOfEndoCellFasta;
+
+if ($compE>0) {			#if we have endogenous material
+
+  #my @arrayofFilesendo = listdirFa(   $arrayofdirs[2] );
+  #my @arrayofCdirsendo = listdirCdir( $arrayofdirs[2] );
+  my $cell0Dir;
+
+  #
+  #  MULTICELL MODE
+  #
+  if ( ($#arrayofCdirsendo) >= 0 ) {
+    $multiCellMode = 1;
+    if ( $#arrayofFilesendo != -1) {
+      die "The endogenous directory ".$arrayofdirs[2]." must directories called CX where X is 0...N without any other fasta files, found: ".($#arrayofFilesendo+1)." fasta files\n";
+    }
+
+
+    my $foundC0=0;
+    my $foundCMAX=0;
+
+    foreach my $dirCendo (@arrayofCdirsendo){
+
+      if($dirCendo =~ /C(\d+)$/        ){
+	if($1 > $foundCMAX){
+	  $foundCMAX = $1;
+	}
+      }else{
+	die "Directories ".$arrayofdirs[2]." does not correspond to the pattern CX where X is 0...N, found: $dirCendo\n";
+      }
+
+      if($dirCendo =~ /C0$/){
+	$foundC0=1;
+      }
+
+    }
+
+    if(!$foundC0){
+      die "Directories ".$arrayofdirs[2]." does not correspond to the pattern CX where X is 0...N, must start with C0\n";
+    }
+
+    $multiCellModeMAX=$foundCMAX;
+
+    for(my $cendoI=0;$cendoI<=$foundCMAX;$cendoI++){
+      if( grep { $_ eq $arrayofdirs[2]."C".$cendoI."" } @arrayofCdirsendo ){
+	#fine
+      }else{
+	die "Missing directory ".$arrayofdirs[2]."C".$cendoI."\n";
+      }
+
+      my @arrayofFilesendoCell = listdirFa(  $arrayofdirs[2]."C".$cendoI."/");
+      $arrayOfEndoCellFasta[ $cendoI ] = \@arrayofFilesendoCell;
+
+      if ($cendoI == 0 ) {
+	@arrayofFilesendo = @arrayofFilesendoCell;
+	$cell0Dir = $arrayofdirs[2]."C".$cendoI."/";
+	if ( ($#arrayofFilesendoCell+1) == 1) {
+	  $diploidMode=0;
+	} else {
+	  if ( ($#arrayofFilesendoCell+1) == 2) {
+	    $diploidMode=1;
+	  } else {
+	    die "The endogenous directory must have 1 (haploid) or 2 (diploid) files, directory in question: ".($arrayofdirs[2]."C".$cendoI).", found ".($#arrayofFilesendoCell+1)."\n";
+	  }
+	}
+      }else{
+	if($diploidMode == 0 ){
+	  if ( ($#arrayofFilesendoCell+1) != 1) {
+	    die "The endogenous directory must have all have 1 (haploid) or 2 (diploid) files, directory in question: ".($arrayofdirs[2]."C".$cendoI).", found: ".($#arrayofFilesendoCell+1)."\n";
+	  }
+	}
+
+	if($diploidMode == 1 ){
+	  if ( ($#arrayofFilesendoCell+1) != 2) {
+	    die "The endogenous directory must have all have 1 (haploid) or 2 (diploid) files, directory in question: ".($arrayofdirs[2]."C".$cendoI).", found: ".($#arrayofFilesendoCell+1)."\n";
+	  }
+	}
+
+
+      }
+    }
+
+    print STDERR  "Found ".($#arrayofCdirsendo+1)." directories: C[0..C".$foundCMAX."]\n";
+
+
+  } else {
+    #
+    #  SINGLE CELL MODE
+    #
+
+    if ( ($#arrayofFilesendo+1) == 1) {
+      $diploidMode=0;
+    } else {
+      if ( ($#arrayofFilesendo+1) == 2) {
+	$diploidMode=1;
+      } else {
+	die "The endogenous directory must have 1 (haploid) or 2 (diploid) files, found: ".($#arrayofFilesendo+1)."";
+      }
+    }
+
+  }
 
   foreach my $fafile (@arrayofFilesendo) {
     print STDERR "Found endogenous file  ".$fafile."\n";
-
-
-    if(isZipped($fafile)){
-      die "The following file ".$fafile." is zipped, please unzip it\n";
-    }
-
-
     if (!(-f $fafile.".fai")) {
       my $cmd = "samtools faidx $fafile";
       runcmdforce($cmd);
@@ -923,8 +1104,15 @@ if ($compE>0) {			#if we have endogenous material
     close(FILE);
   }
 
+
   #comparing endogenous fai
-  my @arrayofFilesendofai = listdirFai( $arrayofdirs[2] );
+  my @arrayofFilesendofai;
+  if($multiCellMode){
+    @arrayofFilesendofai = listdirFai( $cell0Dir );
+  }else{
+    @arrayofFilesendofai = listdirFai( $arrayofdirs[2] );
+  }
+
   if ($diploidMode) {
     if ( ($#arrayofFilesendofai+1) != 2) {
       die "The endogenous directory must have 2 fai files, found: ".($#arrayofFilesendofai+1)." files";
@@ -967,6 +1155,8 @@ if ($compE>0) {			#if we have endogenous material
     }
 
   }
+
+
 }
 
 print STDERR "\nFound ".$sumB." bp bacterial, ".$sumC." bp contaminant, ".$sumE." bp endogenous\n";
@@ -1129,12 +1319,64 @@ print STDERR "".$numberOfFragments."\ttotal fragments\n";
 print STDERR "--------------------------------------------\n";
 print STDERR "".$numberOfFragmentsE."\t(".sprintf("% .2f",100*$numberOfFragmentsE/$numberOfFragments)."%) "."\tendogenous fragments\n";
 
-if($diploidMode){
-  print STDERR "".$numberOfFragmentsE1."\t(".sprintf("% .2f",100*$numberOfFragmentsE1/$numberOfFragments)."%) "."\tendogenous fragments from first  chr file: ".$arrayofFilesendo[0]."\n";
-  print STDERR "".$numberOfFragmentsE2."\t(".sprintf("% .2f",100*$numberOfFragmentsE2/$numberOfFragments)."%) "."\tendogenous fragments from second chr file: ".$arrayofFilesendo[1]."\n";
-}else{
-  #nothing to print
+my @arrayFragForEachCell;
+my @arrayFragForEachCellE1;
+my @arrayFragForEachCellE2;
+
+if($multiCellMode){
+
+  for(my $i=0;$i<=$multiCellModeMAX;$i++){
+    $arrayFragForEachCell[$i] = 0;
+    $arrayFragForEachCellE1[$i] = 0;
+    $arrayFragForEachCellE2[$i] = 0;
+  }
+
+  #force the first file to have a least a fragment
+  if($numberOfFragmentsE>0){
+    $arrayFragForEachCell[0]++;
+  }
+
+  for(my $i=0;$i<$numberOfFragmentsE;$i++){
+    my $randB=int(rand($multiCellModeMAX+1));
+    $arrayFragForEachCell[$randB]++;
+  }
+
+  my $digE = int(log($numberOfFragmentsE)/log(10))+2;
+
+  if($numberOfFragmentsE>0){
+    $arrayFragForEachCellE1[0] ++;
+  }
+
+  for(my $i=0;$i<=$multiCellModeMAX;$i++){
+    if($diploidMode){
+      for(my $j=0;$j<$arrayFragForEachCell[$i];$j++){
+	if(rand()<0.5){
+	  $arrayFragForEachCellE1[$i]++;
+	}else{
+	  $arrayFragForEachCellE2[$i]++;
+	}
+      }
+    }else{
+      $arrayFragForEachCellE1[$i] = $arrayFragForEachCell[$i];
+      $arrayFragForEachCellE2[$i] = 0;
+    }
+
+
+    print STDERR "Will extract ".sprintf("%".$digE."d",$arrayFragForEachCell[$i])." from cell: ".$arrayofdirs[2]."C".$i."/\t(".sprintf("% .2f",100*$arrayFragForEachCell[$i]/$numberOfFragmentsE)."%) "."\tendogenous fragments\n";
+  }
+  #die;
+} else {
+
+  if ($diploidMode) {
+    print STDERR "".$numberOfFragmentsE1."\t(".sprintf("% .2f",100*$numberOfFragmentsE1/$numberOfFragments)."%) "."\tendogenous fragments from first  chr file: ".$arrayofFilesendo[0]."\n";
+    print STDERR "".$numberOfFragmentsE2."\t(".sprintf("% .2f",100*$numberOfFragmentsE2/$numberOfFragments)."%) "."\tendogenous fragments from second chr file: ".$arrayofFilesendo[1]."\n";
+  } else {
+    #nothing to print
+  }
+
 }
+
+
 print STDERR "--------------------------------------------\n";
 print STDERR   "".$numberOfFragmentsC."\t(".sprintf("% .2f",100*$numberOfFragmentsC/$numberOfFragments)."%) "."\tcontaminant fragments\n";
 
@@ -1167,6 +1409,7 @@ for(my $i=0;$i<=$#arrayofFilesbact;$i++){
 
 
 
+
 ########################
 #                      #
 #  Calling fragSim     #
@@ -1175,95 +1418,139 @@ for(my $i=0;$i<=$#arrayofFilesbact;$i++){
 
 #SELECTING ENDOGENOUS FRAGMENTS
 if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
-
-  if ($diploidMode) {
-    my $cmd1="".$fragsim." -tag e1 -n ".$numberOfFragmentsE1;
-
-    $cmd1 .= " -m ".$minsize." ";
-    $cmd1 .= " -M ".$maxsize." ";
-
-    if (defined $misince) {
-      $cmd1 .= " --comp ".$misince." ";
-      $cmd1 .= " --dist ".$distmis." ";
-    }
-
-
-    if (defined $filefragsize) {
-      $cmd1 .= " -s ".$filefragsize." ";
-    }else{
-      if (defined $filefragfreqsize) {
-	$cmd1 .= " -f ".$filefragfreqsize." ";
-      }else{
-	if (defined $loc) {
-	  $cmd1 .= " --loc ".$loc." --scale ".$scale." ";
-	} else {
-	  $cmd1 .= " -l ".$fraglength;
-	}
-      }
-    }
-    if($uniq){
-      $cmd1 .= " -uniq ";
-    }
-    $cmd1 .= "  ".$arrayofFilesendo[0]." |gzip > ".$outputprefix.".e.fa.gz";
-    runcmd($cmd1);
-
-    my $cmd2="".$fragsim." -tag e2 -n ".$numberOfFragmentsE2;
-
-    $cmd2 .= " -m ".$minsize." ";
-    $cmd2 .= " -M ".$maxsize." ";
-
-    if (defined $filefragsize) {
-      $cmd2 .= " -s ".$filefragsize." ";
-    } else {
-      if (defined $filefragfreqsize) {
-	$cmd2 .= " -f ".$filefragfreqsize." ";
-      }else{
-	if (defined $loc) {
-	  $cmd2 .= " --loc ".$loc." --scale ".$scale." ";
-	} else {
-	  $cmd2 .= " -l ".$fraglength." ";
-	}
-      }
-    }
-    if($uniq){
-      $cmd2 .= " -uniq ";
-    }
-    $cmd2.=" ".$arrayofFilesendo[1]." |gzip >> ".$outputprefix.".e.fa.gz";
-    runcmd($cmd2);
-
-    #haploid mode
-  } else {
-
-    my $cmd1="".$fragsim." -tag e -n ".$numberOfFragmentsE1;
-
-    $cmd1 .= " -m ".$minsize." ";
-    $cmd1 .= " -M ".$maxsize." ";
-
-    if (defined $misince) {
-      $cmd1 .= " --comp ".$misince." ";
-      $cmd1 .= " --dist ".$distmis." ";
-    }
-
-    if (defined $filefragsize) {
-      $cmd1 .= " -s ".$filefragsize." ";
-    } else {
-      if (defined $filefragfreqsize) {
-	$cmd1 .= " -f ".$filefragfreqsize." ";
-      }else{
-	if (defined $loc) {
-	  $cmd1 .= " --loc ".$loc." --scale ".$scale." ";
-	} else {
-	  $cmd1 .= " -l ".$fraglength." ";
-	}
-      }
-    }
-    $cmd1 .= "  ".$arrayofFilesendo[0]." | gzip > ".$outputprefix.".e.fa.gz";
-    if($uniq){
-      $cmd1 .= " -uniq ";
-    }
-    runcmd($cmd1);
-
+  my $firstCmdFrag=1;
+  if ($multiCellMode) {
+  }else{
+    $multiCellModeMAX=1;
   }
+
+  for(my $i=0;$i<=$multiCellModeMAX;$i++) {
+    if ($multiCellMode) {
+      my @at_ = @{ $arrayOfEndoCellFasta[ $i ] };
+      $numberOfFragmentsE1 = $arrayFragForEachCellE1[$i];
+      $numberOfFragmentsE2 = $arrayFragForEachCellE2[$i];
+      $arrayofFilesendo[0] =   $at_[0];
+      if ($diploidMode) {
+	$arrayofFilesendo[1] = $at_[1];
+      }
+    }
+
+    if ($diploidMode) {
+      my $cmd1="".$fragsim." -tag e1_".$i." -n ".$numberOfFragmentsE1;
+
+      $cmd1 .= " -m ".$minsize." ";
+      $cmd1 .= " -M ".$maxsize." ";
+
+      if (defined $misince) {
+	$cmd1 .= " --comp ".$misince." ";
+	$cmd1 .= " --dist ".$distmis." ";
+      }
+
+      if (defined $methyl) {
+	$cmd1 .= " --case ";
+      }
+
+
+      if (defined $filefragsize) {
+	$cmd1 .= " -s ".$filefragsize." ";
+      } else {
+	if (defined $filefragfreqsize) {
+	  $cmd1 .= " -f ".$filefragfreqsize." ";
+	} else {
+	  if (defined $loc) {
+	    $cmd1 .= " --loc ".$loc." --scale ".$scale." ";
+	  } else {
+	    $cmd1 .= " -l ".$fraglength;
+	  }
+	}
+      }
+
+
+      if($uniq){
+	$cmd1 .= " -uniq ";
+      }
+
+      $cmd1 .= "  ".$arrayofFilesendo[0]." |gzip ";
+      if($firstCmdFrag){
+	$cmd1 .= " > ";
+	$firstCmdFrag=0;
+      }else{
+	$cmd1 .= " >> "
+      }
+      $cmd1 .= "  ".$outputprefix.".e.fa.gz";
+
+      runcmd($cmd1);
+
+      my $cmd2="".$fragsim." -tag e2_".$i." -n ".$numberOfFragmentsE2;
+
+      $cmd2 .= " -m ".$minsize." ";
+      $cmd2 .= " -M ".$maxsize." ";
+
+      if (defined $methyl) {
+	$cmd2 .= " --case ";
+      }
+
+      if (defined $filefragsize) {
+	$cmd2 .= " -s ".$filefragsize." ";
+      } else {
+	if (defined $filefragfreqsize) {
+	  $cmd2 .= " -f ".$filefragfreqsize." ";
+	} else {
+	  if (defined $loc) {
+	    $cmd2 .= " --loc ".$loc." --scale ".$scale." ";
+	  } else {
+	    $cmd2 .= " -l ".$fraglength." ";
+	  }
+	}
+      }
+
+      if($uniq){
+	$cmd2 .= " -uniq ";
+      }
+
+      $cmd2.=" ".$arrayofFilesendo[1]." |gzip >> ".$outputprefix.".e.fa.gz";
+      runcmd($cmd2);
+
+      #haploid mode
+    } else {
+
+      my $cmd1="".$fragsim." -tag e -n ".$numberOfFragmentsE1;
+
+      $cmd1 .= " -m ".$minsize." ";
+      $cmd1 .= " -M ".$maxsize." ";
+
+
+
+      if (defined $methyl) {
+	$cmd1 .= " --case ";
+      }
+
+
+
+
+      if (defined $misince) {
+	$cmd1 .= " --comp ".$misince." ";
+	$cmd1 .= " --dist ".$distmis." ";
+      }
+
+      if (defined $filefragsize) {
+	$cmd1 .= " -s ".$filefragsize." ";
+      } else {
+	if (defined $filefragfreqsize) {
+	  $cmd1 .= " -f ".$filefragfreqsize." ";
+	} else {
+	  if (defined $loc) {
+	    $cmd1 .= " --loc ".$loc." --scale ".$scale." ";
+	  } else {
+	    $cmd1 .= " -l ".$fraglength." ";
+	  }
+	}
+      }
+      $cmd1 .= "  ".$arrayofFilesendo[0]." | gzip > ".$outputprefix.".e.fa.gz";
+      runcmd($cmd1);
+
+    }
+  }				#end for each cell
 } else {
   my $cmd1="touch ".$outputprefix.".e.fa.gz";
   runcmd($cmd1);
@@ -1277,6 +1564,10 @@ if ($#arrayofFilescont != -1 && $numberOfFragmentsC>0) {
 
     $cmd1 .= " -m ".$minsize." ";
     $cmd1 .= " -M ".$maxsize." ";
+
+    if (defined $methyl) {
+      $cmd1 .= " --case ";
+    }
 
     if (defined $misincc) {
       $cmd1 .= " --comp ".$misincc." ";
@@ -1322,6 +1613,10 @@ if ($#arrayofFilesbact != -1 && $numberOfFragmentsB>0) {
     $cmd1 .= " -m ".$minsize." ";
     $cmd1 .= " -M ".$maxsize." ";
 
+    if (defined $methyl) {
+      $cmd1 .= " --case ";
+    }
+
     if (defined $misincb) {
       $cmd1 .= " --comp ".$misincb." ";
     }
@@ -1363,7 +1658,11 @@ if ($#arrayofFilesbact != -1 && $numberOfFragmentsB>0) {
 #                      #
 ########################
 #endogenous
-if( (defined $matfilee)
+if( (defined $matfilenonmeth)
+    ||
+    (defined $matfilemeth)
+    ||
+    (defined $matfilee)
     ||
     (defined $briggse)
     ||
@@ -1372,6 +1671,14 @@ if( (defined $matfilee)
   my $cmde="".$deamsim." ";
   if( (defined $matfilee) ){
     $cmde .= " -matfile ".$matfilee." ";
+  }
+
+  if( (defined $matfilenonmeth) ){
+    $cmde .= " -matfilenonmeth ".$matfilenonmeth." ";
+  }
+
+  if( (defined $matfilemeth) ){
+    $cmde .= " -matfilemeth    ".$matfilemeth." ";
   }
 
   if( (defined $briggse) ){
@@ -1394,7 +1701,11 @@ if( (defined $matfilee)
 
 
 #bacteria
-if( (defined $matfileb)
+if( (defined $matfilenonmeth)
+    ||
+    (defined $matfilemeth)
+    ||
+    (defined $matfileb)
     ||
     (defined $briggsb)
     ||
@@ -1403,6 +1714,15 @@ if( (defined $matfileb)
   my $cmdb="".$deamsim." ";
   if( (defined $matfileb) ){
     $cmdb .= " -matfile ".$matfileb." ";
+  }
+
+
+  if( (defined $matfilenonmeth) ){
+    $cmdb .= " -matfilenonmeth ".$matfilenonmeth." ";
+  }
+
+  if( (defined $matfilemeth) ){
+    $cmdb .= " -matfilemeth    ".$matfilemeth." ";
   }
 
   if( (defined $briggsb) ){
@@ -1431,7 +1751,11 @@ if( (defined $matfileb)
 
 
 #human cont.
-if( (defined $matfilec)
+if( (defined $matfilenonmeth)
+    ||
+    (defined $matfilemeth)
+    ||
+    (defined $matfilec)
     ||
     (defined $briggsc)
     ||
@@ -1440,6 +1764,14 @@ if( (defined $matfilec)
   my $cmdc="".$deamsim." ";
   if( (defined $matfilec) ){
     $cmdc .= " -matfile ".$matfilec." ";
+  }
+
+  if( (defined $matfilenonmeth) ){
+    $cmdc .= " -matfilenonmeth ".$matfilenonmeth." ";
+  }
+
+  if( (defined $matfilemeth) ){
+    $cmdc .= " -matfilemeth    ".$matfilemeth." ";
   }
 
   if( (defined $briggsc) ){
