@@ -457,6 +457,11 @@ int main (int argc, char *argv[]) {
 	    continue;
 	}
 
+	if(string(argv[i]) == "--case"  ){
+	    uppercase=false;
+	    continue;
+	}
+
 
 	if(string(argv[i]) == "-m" ){
 	    minimumFragSize = destringify<int>(argv[i+1]);
