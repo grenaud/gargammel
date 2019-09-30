@@ -26,7 +26,7 @@ libgab/utils.o: bamtools/lib/libbamtools.so  libgab/utils.h
 
 bamtools/src/api/BamAlignment.h:
 	rm -rf bamtools/
-	git clone --depth 1 --recursive https://github.com/pezmaster31/bamtools.git && git reset --hard d24d850de17134fe4e7984b26493c5c0a1844b35
+	git clone --depth 1 --recursive https://github.com/pezmaster31/bamtools.git && cd bamtools/ && git reset --hard d24d850de17134fe4e7984b26493c5c0a1844b35
 
 bamtools/lib/libbamtools.so: bamtools/src/api/BamAlignment.h
 	cd bamtools/ && mkdir -p build/  && cd build/ && cmake .. && make && cd ../..
