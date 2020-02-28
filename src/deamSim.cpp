@@ -1044,15 +1044,15 @@ int main (int argc, char *argv[]) {
 		    cerr << "Unable to open 3p deamination file "<<deam3File<<endl;
 		    return 1;
 		}
-		cerr<<"test2"<<endl;
-		for(unsigned int i=0;i<sub3p.size();i++){		
-		    cerr<<i<<"\t"<<arrayToString(sub3p[i].s,12,"\t")<<endl;
-		}
+		// //cerr<<"test2"<<endl;
+		// for(unsigned int i=0;i<sub3p.size();i++){		
+		//     cerr<<i<<"\t"<<arrayToString(sub3p[i].s,12,"\t")<<endl;
+		// }
 		reverse(sub3p.begin(),sub3p.end());
 	
-		for(unsigned int i=0;i<sub3p.size();i++){		
-		    cerr<<i<<"\t"<<arrayToString(sub3p[i].s,12,"\t")<<endl;
-		}
+		// for(unsigned int i=0;i<sub3p.size();i++){		
+		//     cerr<<i<<"\t"<<arrayToString(sub3p[i].s,12,"\t")<<endl;
+		// }
 
 	    }
 	}
