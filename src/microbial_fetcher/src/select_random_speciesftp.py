@@ -28,7 +28,7 @@ metanames_path = os.path.join(os.path.dirname(__file__),
 with gzip.open(metanames_path, "r") as fin:
     for line in fin:
         ID, ftp, species = re.split("\s+", line.rstrip("\n"))
-        if species in metanames.keys():
+        if species in list(metanames.keys()):
             metanames[species].append((ID, ftp))
         else:
             metanames[species] = [(ID, ftp)]

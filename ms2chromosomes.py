@@ -68,7 +68,7 @@ def which(program):
 
 def handle_job(cjob):
 
-    print str(cjob);
+    print(str(cjob));
     jobcreated=subprocess.Popen(cjob,shell=True,
                                 executable="/bin/bash",
                                 stdout=subprocess.PIPE, 
@@ -77,9 +77,9 @@ def handle_job(cjob):
 
     out, err = jobcreated.communicate()
     errcode  = jobcreated.returncode;
-	
+        
     if(errcode != 0): #has finished but wrong code
-        print "Job failed "+cjob+" failed";
+        print("Job failed "+cjob+" failed");
         sys.exit(1);
 
     return out;
@@ -116,7 +116,7 @@ destfolder   = options.destfolder
 numsim       = options.numsim
 
 if(destfolder ==  None):
-    print "Please specify the output folder";
+    print("Please specify the output folder");
     sys.exit(1);
 
 if(not destfolder.endswith("/")):
@@ -137,14 +137,14 @@ numcont = options.numcont;
 numarch = options.numendo;
 
 if(numcont < 0 ):
-    print "Please specify a positive number of present-day human contaminant";
+    print("Please specify a positive number of present-day human contaminant");
     sys.exit(1);
 if(numarch < 0 ):
-    print "Please specify a positive number of ancient endogenous humans";
+    print("Please specify a positive number of ancient endogenous humans");
     sys.exit(1);
 
 if(numarch > 2 ):
-    print "Please specify a number of ancient endogenous humans lesser than 2";
+    print("Please specify a number of ancient endogenous humans lesser than 2");
     sys.exit(1);
 
 
@@ -197,45 +197,45 @@ originali=0;
 
 while i < (numsim+1):
     
-	# Create simulation file
-	originali += 1;    
-	infile_name = ""+destfolder+"/simul_"+str(i)+".txt"
+        # Create simulation file
+        originali += 1;    
+        infile_name = ""+destfolder+"/simul_"+str(i)+".txt"
 
         commname = ""+mscmd+" "+str(numcont+numarch+1)+" 1 -T -t "+str(theta)+" -I 2 "+str(numcont+1)+" "+str(numarch)+" -ej "+str(timesplitms)+" 1 2 "
-        print commname
+        print(commname)
 
-	commname = commname + " > "+infile_name+"_tmp";
-	handle_job(commname);
+        commname = commname + " > "+infile_name+"_tmp";
+        handle_job(commname);
 
         commname3 = "cat "+infile_name+"_tmp | grep '('   > "+infile_name+"_tree";
-	handle_job(commname3);
+        handle_job(commname3);
 
         commname4 = ""+seqgencmd+"  -z `date +%H%M%S%N`   -mHKY -l "+str(lengthchr)+" -s "+str(branchlscale)+"   "+infile_name+"_tree |tail -n+2  |awk '{print \">\"$1\"\\n\"$2}'  > "+infile_name+".fa";
-	handle_job(commname4);
+        handle_job(commname4);
 
-	#try:
-	if True:	
-		print "simul number "+str(originali)
+        #try:
+        if True:        
+                print("simul number "+str(originali))
 
-		myid2seq = {};
+                myid2seq = {};
 
-		handle = open(infile_name+".fa", "rU")
+                handle = open(infile_name+".fa", "rU")
 
-		for record in SeqIO.parse(handle, "fasta") :
-			#print str(record.id);
-			myid2seq[ record.id  ] = str(record.seq);
-		handle.close();
+                for record in SeqIO.parse(handle, "fasta") :
+                        #print str(record.id);
+                        myid2seq[ record.id  ] = str(record.seq);
+                handle.close();
                 
                 commname4 = "gzip -f "+infile_name+".fa";
                 handle_job(commname4);
 
                 
 
-		arrayHumans  = [];
-		arrayNeander = [];
-		ancSeq = "";
+                arrayHumans  = [];
+                arrayNeander = [];
+                ancSeq = "";
 
-		#print record.id+"\t"+str(len(record.seq));
+                #print record.id+"\t"+str(len(record.seq));
                 #seq1:first chr endo
                 #seq2:second chr endo
                 #seq3:reference
@@ -244,26 +244,26 @@ while i < (numsim+1):
 
 
                 #will be endogenous
-		for idseq in range(1,numarch+1):
-                    print "endo seq#"+str(idseq);
+                for idseq in range(1,numarch+1):
+                    print("endo seq#"+str(idseq));
                     arrayNeander.append( myid2seq[ str(idseq)  ] ); #ancSeq= myid2seq[ str(numcont+1+numarch)  ];#anc
 
-                print "ref. seq#"+str(numarch+1);
+                print("ref. seq#"+str(numarch+1));
 
                 #will be contaminant
-		for idseq in range((numarch+1+1),(numcont+1+numarch+1)):
-                    print "cont seq#"+str(idseq);
-                    arrayHumans.append( myid2seq[ str(idseq)  ] ); 			#print str(idseq);
+                for idseq in range((numarch+1+1),(numcont+1+numarch+1)):
+                    print("cont seq#"+str(idseq));
+                    arrayHumans.append( myid2seq[ str(idseq)  ] );                         #print str(idseq);
 
-		#print str(len(arrayHumans));
-		#print str(len(arrayNeander));
+                #print str(len(arrayHumans));
+                #print str(len(arrayNeander));
 
 
 
-		#take #(numarch+1) as the reference
-		fileHandleWriteREF = open (""+destfolder+"/ref.fa", 'a' ) ;
-		fileHandleWriteREF.write(">ref_"+str(originali)+ "\n"+myid2seq[ str(numarch+1)  ]+"\n");
-		fileHandleWriteREF.close();
+                #take #(numarch+1) as the reference
+                fileHandleWriteREF = open (""+destfolder+"/ref.fa", 'a' ) ;
+                fileHandleWriteREF.write(">ref_"+str(originali)+ "\n"+myid2seq[ str(numarch+1)  ]+"\n");
+                fileHandleWriteREF.close();
 
                 for idseq in range(1,numarch+1):
                     fileHandleEndoSeq1 = open (""+destfolder+"endo/endo."+str(idseq)+".fa", 'a' );
@@ -281,7 +281,7 @@ while i < (numsim+1):
 
                 segsites=0;
                 #segsiteslist=[];
-		#destfolder+"/all.sam.gz";
+                #destfolder+"/all.sam.gz";
 
                 if(originali == 1):
                     fileHandleSS = open ( ""+destfolder+"/endo/segsites", 'w' ) ;
@@ -293,9 +293,9 @@ while i < (numsim+1):
                         segsites+=1;
                         fileHandleSS.write(">ref_"+str(originali)+ "\t"+str(seqindex+1)+"\t"+myid2seq[ str(1) ][seqindex]+"\t"+myid2seq[ str(2) ][seqindex]+"\n");
 
-                print "het. rate: "+str(float(segsites)/float(lengthchr));                
-		fileHandleSS.close();
-                print "Wrote segregating sites to "+str(destfolder)+"/endo/segsites";
+                print("het. rate: "+str(float(segsites)/float(lengthchr)));                
+                fileHandleSS.close();
+                print("Wrote segregating sites to "+str(destfolder)+"/endo/segsites");
 
 
                 for idseq in range((numarch+1+1),(numcont+1+numarch+1)):
@@ -303,7 +303,7 @@ while i < (numsim+1):
                     fileHandleContSeq.write(">cont_"+str(originali)+ "\n"+myid2seq[ str(idseq)  ]+"\n");
                 fileHandleContSeq.close();
 
-	#os.remove(infile_name)
+        #os.remove(infile_name)
         i += 1;
 
 
