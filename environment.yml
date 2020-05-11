@@ -4,7 +4,7 @@ channels:
   - bioconda
   - conda-forge
 dependencies:
-  - python=3.6
+  - python=2.7
   - gargammel
   - ms
   - seq-gen

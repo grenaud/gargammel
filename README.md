@@ -41,7 +41,7 @@ If you plan on using ms2chromosomes.py to simulate chromosomes based on ms, you 
 
 Both should be installed in your path.
 
-Alternatively, you can use the supplied [conda](https://https://conda.io/) `environment.yml` file to download and set up all dependencies for you for you.
+Alternatively, you can use the supplied [conda](https://https://conda.io/) `environment.yml` file to download and set up all dependencies described in this README for you.
 
 
     conda env create -f environment.yml
@@ -50,7 +50,7 @@ Alternatively, you can use the supplied [conda](https://https://conda.io/) `envi
 Installation:
 -------------------------------------------------------------------------------------
 
-> If you are using the conda enviroment, you can skip this step and just load the environment with `conda activate gargammel`
+> If you are using the conda enviroment, you can skip this step and just load the environment with `conda activate gargammel`. All subsequent steps you can replace `gargammel.pl` with just `gargammel`.
 
 In the main directory, simply type
 
