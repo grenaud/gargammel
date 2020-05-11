@@ -27,6 +27,14 @@ Do a :
 
     git clone --recursive  --depth 1 https://github.com/grenaud/gargammel.git
 
+or via (bio)conda
+
+```bash
+conda install -c bioconda gargammel
+```
+
+> Installing with conda will only provide the main gargammel program, for the additional scripts in the repository, please see run git clone, and create the conda environment described below.
+
 
 Requirements:
 -------------------------------------------------------------------------------------
