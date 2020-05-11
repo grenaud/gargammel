@@ -33,7 +33,7 @@ or via (bio)conda
 conda install -c bioconda gargammel
 ```
 
-> Installing with conda will only provide the main gargammel program, for the additional scripts in the repository, please see run git clone, and create the conda environment described below.
+> Installing with conda will only provide the main gargammel program, for the additional scripts in the repository, please run `git clone` as above, and create the conda environment described below.
 
 
 Requirements:
