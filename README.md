@@ -2,7 +2,9 @@
   gargammel: simulations of ancient DNA datasets
 =====================================================================================
 
-![install with bioconda](https://img.shields.io/conda/pn/bioconda/gargammel?style=flat-square)
+![]()
+
+[![install with bioconda](https://img.shields.io/conda/pn/bioconda/gargammel?style=flat-square)](https://bioconda.github.io/recipes/gargammel/README)
 
 gargammel is a set of programs aimed at simulating ancient DNA fragments. For ancient hominin samples
 our program can also simulate various levels of present-day human contamination and microbial contamination.
