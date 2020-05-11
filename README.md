@@ -2,6 +2,8 @@
   gargammel: simulations of ancient DNA datasets
 =====================================================================================
 
+![install with bioconda](https://img.shields.io/conda/pn/bioconda/gargammel?style=flat-square)
+
 gargammel is a set of programs aimed at simulating ancient DNA fragments. For ancient hominin samples
 our program can also simulate various levels of present-day human contamination and microbial contamination.
 
@@ -37,17 +39,24 @@ If you plan on using ms2chromosomes.py to simulate chromosomes based on ms, you 
  * Hudson's ms (see: http://home.uchicago.edu/rhudson1/source/mksamples.html)
  * seq-gen, you can install on Ubuntu by typing:   sudo apt install seq-gen
 
-Both should be installed in your path. 
+Both should be installed in your path.
+
+Alternatively, you can use the supplied [conda](https://https://conda.io/) `environment.yml` file to download and set up all dependencies for you for you.
+
+
+    conda env create -f environment.yml
+
 
 Installation:
 -------------------------------------------------------------------------------------
+
+> If you are using the conda enviroment, you can skip this step and just load the environment with `conda activate gargammel`
 
 In the main directory, simply type
 
   make 
 
 This should install bamtools (C++ library to read/write BAM files) and ART (Illumina read simulator).
-
 
 Overview:
 -------------------------------------------------------------------------------------
