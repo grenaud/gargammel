@@ -1,0 +1,14 @@
+name: gargammel
+channels:
+  - defaults
+  - bioconda
+  - conda-forge
+dependencies:
+  - python=2.7
+  - gargammel
+  - ms
+  - seq-gen
+  - numpy
+  - scipy
+  - biopython
+  - msprime

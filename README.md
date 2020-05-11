@@ -2,6 +2,9 @@
   gargammel: simulations of ancient DNA datasets
 =====================================================================================
 
+[![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat)](http://bioconda.github.io/recipes/gargammel/README.html)
+
+
 gargammel is a set of programs aimed at simulating ancient DNA fragments. For ancient hominin samples
 our program can also simulate various levels of present-day human contamination and microbial contamination.
 
@@ -24,6 +27,14 @@ Do a :
 
     git clone --recursive  --depth 1 https://github.com/grenaud/gargammel.git
 
+or via (bio)conda
+
+```bash
+conda install -c bioconda gargammel
+```
+
+> Installing with conda will only provide the main gargammel program, for the additional scripts in the repository, please run `git clone` as above, and create the conda environment described below.
+
 
 Requirements:
 -------------------------------------------------------------------------------------
@@ -37,17 +48,24 @@ If you plan on using ms2chromosomes.py to simulate chromosomes based on ms, you 
  * Hudson's ms (see: http://home.uchicago.edu/rhudson1/source/mksamples.html)
  * seq-gen, you can install on Ubuntu by typing:   sudo apt install seq-gen
 
-Both should be installed in your path. 
+Both should be installed in your path.
+
+Alternatively, you can use the supplied [conda](https://https://conda.io/) `environment.yml` file to download and set up all dependencies described in this README for you.
+
+
+    conda env create -f environment.yml
+
 
 Installation:
 -------------------------------------------------------------------------------------
+
+> If you are using the conda enviroment, you can skip this step and just load the environment with `conda activate gargammel`. All subsequent steps you can replace `gargammel.pl` with just `gargammel`.
 
 In the main directory, simply type
 
   make 
 
 This should install bamtools (C++ library to read/write BAM files) and ART (Illumina read simulator).
-
 
 Overview:
 -------------------------------------------------------------------------------------
