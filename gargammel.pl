@@ -775,6 +775,10 @@ if( ($compB+$compC+$compE) != 1){
 }
 
 
+if( (defined $coverage) && ($compE==0) ){
+  die "Cannot use the endogenous coverage -c and not specify some level of endogenous content.";
+}
+
 
 if(substr($dirWithChr,length($dirWithChr)-1,1) ne "/"){
   $dirWithChr = $dirWithChr."/";
