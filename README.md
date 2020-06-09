@@ -430,3 +430,14 @@ If you have some microbial sequences, to create a sample with say 70% bacterial 
       
 ./gargammel.pl -c 0.5  --comp 0.7,0.05,0.25 -l 40    -o exampleSeq/simulationb70c5 exampleSeq/inputfolder/
 
+FAQ and issues 
+-------------------------------------------------------------------------------------
+
+* I am getting:
+
+    ./art_illumina: error while loading shared libraries: libgsl.so.0: cannot open shared object file: No such file or directory
+
+Make sure you have libgsl installed and create a symbolic link:
+
+     sudo ln -s  /usr/lib/x86_64-linux-gnu/libgsl.so.23.0.0   /usr/lib/libgsl.so.0 
+
