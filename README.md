@@ -441,3 +441,11 @@ Make sure you have libgsl installed and create a symbolic link:
 
      sudo ln -s  /usr/lib/x86_64-linux-gnu/libgsl.so.23.0.0   /usr/lib/libgsl.so.0 
 
+* Can I know where on the genome of origin the fragment was sampled?
+
+    Yes! fragSim, which generates the original fragments uses the following format: [CHROMOSOME NAME]:[STRAND]:[START]:[END]:[LENGTH]
+    The overall wrapper (gargammel.pl) will add e1_ to endogenous fragments from the first reference and e2_ to endogenous fragments from the second reference. It will add c_X to the fragments from present-day human contaminants where X is the # of the genome and b_X to the fragments from bacterial contaminants where X is the # of the genome.
+
+* Can gargammel simulate indels?
+
+   Yes and no. gargammel does not currently insert indels as a result of sequencing errors. However, if you add indels in your input genome, it will handle them without any problems. 
