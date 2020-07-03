@@ -194,7 +194,7 @@ for _ in range(contamination_individuals):
 
         with open(con_dir + filename, 'w') as f:
             # Write header
-            f.write('>cont_{}\n'.format(i + 1))
+            f.write('>cont_1\n')
             # Write sequence
             f.write(chr_sequences[chr_index])
 
@@ -215,8 +215,7 @@ for _ in range(present_individuals):
 
         with open(filename, 'w') as f:
             # Write header
-            f.write('>ref\n')
-            f.write('>reference_{}\n'.format(i + 1))
+            f.write('>reference_1\n')
             # Write sequence
             f.write(chr_sequences[chr_index])
 
@@ -237,7 +236,7 @@ for _ in range(ancient_individuals):
 
         with open(anc_dir + filename, 'w') as f:
             # Write header
-            f.write('>ancient_{}\n'.format(i + 1))
+            f.write('>ancient_1\n')
             # Write sequence
             f.write(chr_sequences[chr_index])
 
