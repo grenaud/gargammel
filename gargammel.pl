@@ -1215,12 +1215,28 @@ my $numberOfFragmentsC;
 my $numberOfFragmentsB;
 my $numberOfFragmentsE;
 
+#TODO if single end and averages size is less than read length
 if(defined $coverage){
   my $sumEeffective=$sumE;
+  my $sizeToUse=$averageSize;
+  if ($se) {
+    if( $readlength < $averageSize){
+      print STDERR "The readlength (".$readlength."bp) is lesser than the average fragment size (".$averageSize."bp), using the read length to compute the number of fragments\n";
+      $sizeToUse=$readlength;
+    }
+  }else{
+
+    if( (2*$readlength) < $averageSize){
+      print STDERR "The readlength (2x".$readlength."bp) is lesser than the average fragment size (".$averageSize."bp), using 2 x read length to compute the number of fragments\n";
+      $sizeToUse=2*$readlength;
+    }
+
+  }
+
   if($diploidMode){
     $sumEeffective=$sumE/2;#if diploid, the sum is overestimated by 2.
   }
-  $numberOfFragmentsE = int($coverage*($sumEeffective/$averageSize));
+  $numberOfFragmentsE = int($coverage*($sumEeffective/$sizeToUse));
   $numberOfFragments  = int($numberOfFragmentsE/$compE);
   $numberOfFragmentsC = int($numberOfFragments * $compC/($compE+$compC+$compB));
   $numberOfFragmentsB = int($numberOfFragments * $compB/($compE+$compC+$compB));
