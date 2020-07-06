@@ -29,7 +29,7 @@ bamtools/src/api/BamAlignment.h:
 	git clone  --recursive https://github.com/pezmaster31/bamtools.git && cd bamtools/ && git reset --hard d24d850de17134fe4e7984b26493c5c0a1844b35
 
 bamtools/lib/libbamtools.so: bamtools/src/api/BamAlignment.h
-	cd bamtools/ && mkdir -p build/  && cd build/ && cmake .. && make && cd ../..
+	cd bamtools/ && mkdir -p build/  && cd build/ && if cmake ..; then echo ""; else if cmake3 ..; then echo ""; else echo "cmake failed, please install cmake v3"; fi  fi  && make && cd ../..
 
 art_src_MountRainier/art_illumina_src/art_illumina.o: #todo: add wget after rm 
 	rm -rf art_src_MountRainier/ art_src_MountRainier_Linux/ art_src_MountRainier_MacOS/ artsrcmountrainier20160605linuxtgz.tgz artsrcmountrainier20160605macostgz.tgz
