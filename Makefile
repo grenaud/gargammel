@@ -5,23 +5,23 @@ OS := $(shell uname)
 
 all: 	src/fragSim src/deamSim src/adptSim src/fasta2fastas art_src_MountRainier/art_illumina_src/art_illumina.o
 
-src/fragSim: libgab/utils.o bamtools/lib/libbamtools.so
+src/fragSim: libgab/libgab.a bamtools/lib/libbamtools.so
 	make -C src
 
-src/fasta2fastas: libgab/utils.o bamtools/lib/libbamtools.so
+src/fasta2fastas: libgab/libgab.a bamtools/lib/libbamtools.so
 	make -C src
 
-src/deamSim: libgab/utils.o bamtools/lib/libbamtools.so
+src/deamSim: libgab/libgab.a bamtools/lib/libbamtools.so
 	make -C src
 
-src/adptSim: libgab/utils.o bamtools/lib/libbamtools.so
+src/adptSim: libgab/libgab.a bamtools/lib/libbamtools.so
 	make -C src
 
-libgab/utils.h:
+libgab/libgab.h:
 	rm -rf libgab/
 	git clone --depth 1 --recursive https://github.com/grenaud/libgab.git
 
-libgab/utils.o: bamtools/lib/libbamtools.so  libgab/utils.h
+libgab/libgab.a: bamtools/lib/libbamtools.so  libgab/libgab.h
 	make -C libgab
 
 bamtools/src/api/BamAlignment.h:

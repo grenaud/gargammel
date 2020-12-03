@@ -27,7 +27,7 @@
 #include <api/BamAux.h>
 #include "PutProgramInHeader.h"
 
-#include "utils.h"
+#include "libgab.h"
 
 //#define DEBUG
 

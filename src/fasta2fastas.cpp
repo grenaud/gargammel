@@ -9,7 +9,7 @@
 #include <fstream>
 #include <gzstream.h>
 
-#include "utils.h"
+#include "libgab.h"
 
 using namespace std;
 
