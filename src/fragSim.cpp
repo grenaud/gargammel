@@ -28,6 +28,7 @@
 #include "PutProgramInHeader.h"
 
 #include "libgab.h"
+#include "FastQParser.h"
 
 //#define DEBUG
 
@@ -129,6 +130,57 @@ void checkUniqueness(string * deflineToPrint,
 	*deflineToPrint=*deflineToPrint+"_"+tag;	    
     }
     
+}
+
+inline int selectFragmentLength(const bool fileSizeFragB,
+				const bool fileSizeFragBFreq,
+				const bool specifiedLength,
+				const bool specifiedScale,
+				const vector<int> & sizeFragList,
+				const vector<freqFragLength> & fragLengthFreq,
+				const int & sizeFragments,
+				default_random_engine & generator,
+				lognormal_distribution<double> & distribution){
+    int length=0;
+    //From file
+    if(fileSizeFragB          ){ 
+	int randIndex = randomInt(0,int(sizeFragList.size())-1);
+	length=sizeFragList[ randIndex ]; 	
+
+    }
+    else
+	//from frequency
+	if(fileSizeFragBFreq      ){ 
+		
+	    double p          =  randomProb();
+	    double cProbLower =  0.0;
+	    bool foundL        =  false;
+	    unsigned int indexFoundL=-1;
+	    for(unsigned int i=0;i<fragLengthFreq.size();i++){
+		if(cProbLower <=  p 
+		   &&
+		   p          <=  fragLengthFreq[i].cProb){						
+		    indexFoundL = i;
+		    foundL       = true;
+		    cProbLower  = fragLengthFreq[i].cProb;
+		    break;
+		}
+	    }
+
+	    if(foundL){
+		length=fragLengthFreq[ indexFoundL ].l; 	
+	    }else{
+		length=fragLengthFreq[ randomInt(0, int(fragLengthFreq.size())-1 ) ].l; 	
+	    }
+	}	
+	else
+	    //fixed length
+	    if(specifiedLength    ){ length=sizeFragments;                                      	}
+	    else
+		//scale and loc
+		if(specifiedScale ){ length=int(distribution(generator));                              	}
+
+    return length;
 }
 
 /**
@@ -332,12 +384,15 @@ int main (int argc, char *argv[]) {
 
     string   tag              = "";
     bool uniqTags=false;
+    bool fastqMode=false;
+    
     bool produceUnCompressedBAM=false;
     map<string, unsigned int> fragmentID2Count;
     
     const string usage=string("\n This program takes a fasta file representing a chromosome and generates\n")+
 	" aDNA fragments according to a certain distribution\n\n"+
 	" "+string(argv[0])+" [options]  [chromosome fasta] "+"\n\n"+
+
 	
 	"\t\t"+"-n\t"+"[number]" +"\t\t\t"+"Generate [number] fragments (default: "+stringify(nFragments)+")"+"\n"+
 	"\n"+
@@ -347,12 +402,16 @@ int main (int argc, char *argv[]) {
 	"\t\t"+"\t"+""+"\t\t\t\t"+"will only reflect the chromosome file used"+"\n"+
 	"\t\t"+"--norev\t"+""+"\t\t\t\t"+"Do not reverse complement (default: rev. comp half of seqs.)"+"\n"+
 	"\t\t"+"--case\t"+""+"\t\t\t\t"+"Do not set the sequence to upper-case (default: uppercase the seqs.)"+"\n"+
+	"\t\t"+"--fq\t"+""+"\t\t\t\t"+"The chromosome file is a fastq file. Suitable if you have pre-selected the fragments and\n"+
+	"\t\t"+"    \t"+""+"\t\t\t\t"+"just want to trim them according to certain fragment lengths\n"+
+	"\t\t"+"    \t"+""+"\t\t\t\t"+"please use either fastq.gz or fq.gz (Default:  "+booleanAsString(fastqMode)+")"+"\n"+
+	"\t\t"+"    \t"+""+"\t\t\t\t"+"Please note that this mode will write fastq to STDOUT\n"+
 
 	"\n"+
 	"\tOutput options\n"+
-	"\t\t"+"-b\t"+"[bam out]"   +"\t\t\t"+"Write output as a BAM file (default: fasta in stdout)"+"\n"+
-	"\t\t"+"-o\t"+"[fasta out]" +"\t\t\t"+"Write output as a zipped fasta (default: fasta in stdout)"+"\n"+
-	"\t\t"+"-u"                 +"\t\t\t\t\t"+"Produce uncompressed BAM (good for unix pipe)"+"\n"+
+	"\t\t"+"-b\t"+"[bam out]"   +"\t\t\t"+"Write output as a BAM file (default: fasta in STDOUT)"+"\n"+
+	"\t\t"+"-o\t"+"[fasta out]" +"\t\t\t"+"Write output as a zipped fasta (default: fasta in STDOUT)"+"\n"+
+	"\t\t"+"-u"                 +"\t\t\t\t\t"+"Produce uncompressed BAM (good for UNIX pipe)"+"\n"+
 	"\t\t"+"-tag\t" +"[tag]\t\t\t\t"+"Append this string to deflines or BAM tags (Default:  "+booleanAsString(tagb)+")"+"\n"+
 	"\t\t"+"-tmp\t" +"[tmp dir]\t\t\t"+"Use this directory as the temporary dir for zipped files (default:  "+tmpDir+")"+"\n"+
 	"\t\t"+"-uniq\t" +"\t\t\t\t"+"Make sure that the fragment names are unique by appending a suffix (default:  "+booleanAsString(uniqTags)+")"+"\n"+
@@ -454,6 +513,11 @@ int main (int argc, char *argv[]) {
 
 	if(string(argv[i]) == "-u"  ){
 	    produceUnCompressedBAM=true;
+	    continue;
+	}
+
+	if(string(argv[i]) == "--fq"  ){
+	    fastqMode=true;
 	    continue;
 	}
 
@@ -966,73 +1030,100 @@ int main (int argc, char *argv[]) {
     //return 1;
     bool isGzipped=false;
     string tempfile_ = tmpDir+"/tmpfileXXXXXX";
-    if(strEndsWith(inFile,".gz")){
-	
+    IndexedGenome* genome=NULL;
 
-	char tmpname[ tempfile_.size()];
-	strcpy(tmpname,tempfile_.c_str());
-	int fdtemp = mkstemp(tmpname);
-	if(fdtemp == -1){
-	    cerr<<"Cannot create temp file using pattern: "<<tempfile_<<", either choose a different temp dir or unzip the file"<<endl;
-	    return 1;
-	}
-	tempfile_ = string(tmpname);
+    FastQParser * fp=NULL;
+    FastQObj * fo;
 
-	cerr<<"File "<<inFile<<" is zipped, trying to write to temp. file: "<<tempfile_<<endl;
-
-	fastaFile    = tmpname;
-	fastaFileFai = inFile+".fai";	
-
-	igzstream fastagzfd;
-	string linetmp;
-
-	ofstream myFiletmp;	
-	myFiletmp.open(tmpname);
-
-	fastagzfd.open(inFile.c_str(), ios::in);
-
-	if (fastagzfd.good()){
-	    while ( getline (fastagzfd,linetmp)){
-		myFiletmp << linetmp << endl;
-	    }
-	}
-	myFiletmp.close();
-
-	cerr<<"unzipping is done"<<endl;
-
-	//fastaFile
-	isGzipped=true;
-    }else{
-	fastaFile   =inFile;
-	fastaFileFai=inFile+".fai";	
-    }
-
-    
-    IndexedGenome* genome=new IndexedGenome(fastaFile.c_str(),fastaFileFai.c_str(),uppercase);
-    cerr<<"Mapped "<<fastaFile<<" into memory"<<endl;
-    
-
-
-    
     uint64_t genomeLength=0;
     vector<chrinfo> chrFound;
 
     typedef map<string,faidx1_t>::iterator it_type;
-    for(it_type iterator = genome->name2index.begin(); iterator != genome->name2index.end(); iterator++) {
+    
+    if(fastqMode){
+
+	if(outBAMb){
+	    cerr<<"Error: cannot specify output BAM for fastq mode."<<endl;
+	    return 1;
+	}
+	if(outFastagzb){
+	    cerr<<"Error: cannot specify output zipped fastq for fastq mode."<<endl;
+	    return 1;
+	}
+	if(gcBiasB){
+	    cerr<<"Error: cannot specify GC bias for fastq mode."<<endl;
+	    return 1;
+	}
+
+	fp = new FastQParser(inFile,false);
+
+    }else{
+	if(strEndsWith(inFile,".gz")){
+	
+
+	    char tmpname[ tempfile_.size()];
+	    strcpy(tmpname,tempfile_.c_str());
+	    int fdtemp = mkstemp(tmpname);
+	    if(fdtemp == -1){
+		cerr<<"Cannot create temp file using pattern: "<<tempfile_<<", either choose a different temp dir or unzip the file"<<endl;
+		return 1;
+	    }
+	    tempfile_ = string(tmpname);
+
+	    cerr<<"File "<<inFile<<" is zipped, trying to write to temp. file: "<<tempfile_<<endl;
+
+	    fastaFile    = tmpname;
+	    fastaFileFai = inFile+".fai";	
+
+	    igzstream fastagzfd;
+	    string linetmp;
+
+	    ofstream myFiletmp;	
+	    myFiletmp.open(tmpname);
+
+	    fastagzfd.open(inFile.c_str(), ios::in);
+
+	    if (fastagzfd.good()){
+		while ( getline (fastagzfd,linetmp)){
+		    myFiletmp << linetmp << endl;
+		}
+	    }
+	    myFiletmp.close();
+
+	    cerr<<"unzipping is done"<<endl;
+
+	    //fastaFile
+	    isGzipped=true;
+	}else{
+	    fastaFile   =inFile;
+	    fastaFileFai=inFile+".fai";	
+	}
+	genome=new IndexedGenome(fastaFile.c_str(),fastaFileFai.c_str(),uppercase);
+	cerr<<"Mapped "<<fastaFile<<" into memory"<<endl;
+
+	
+	for(it_type iterator = genome->name2index.begin(); iterator != genome->name2index.end(); iterator++) {
 #ifdef DEBUG    
-	cerr<<iterator->first<<"\t"<<iterator->second.len<<"\t"<<genomeLength<<endl;
+	    cerr<<iterator->first<<"\t"<<iterator->second.len<<"\t"<<genomeLength<<endl;
 #endif
 
-	chrinfo toadd;
+	    chrinfo toadd;
 
-	toadd.name          = iterator->first;
-	toadd.startIndexChr = genomeLength+1;
-	toadd.length        = iterator->second.len;
-	toadd.endIndexChr   = genomeLength+iterator->second.len;
-	genomeLength       += iterator->second.len;
+	    toadd.name          = iterator->first;
+	    toadd.startIndexChr = genomeLength+1;
+	    toadd.length        = iterator->second.len;
+	    toadd.endIndexChr   = genomeLength+iterator->second.len;
+	    genomeLength       += iterator->second.len;
 
-	chrFound.push_back(toadd);
-    }
+	    chrFound.push_back(toadd);
+	}
+
+    }//if not fastq
+    
+        
+
+
+    
 
 #ifdef DEBUG    
     cerr<<"genomeLength "<<genomeLength<<endl;
@@ -1180,192 +1271,149 @@ int main (int argc, char *argv[]) {
     }
 
     unsigned int   f       = 0;
+  
+    if(fastqMode){
+	while(true){
 
+	    string def;
+	    string seq;
+	    string qal;
+	    if(!fp->hasData())
+		break;
+	    fo  = fp->getData();
+	    def = *(fo->getID());
+	    seq = *(fo->getSeq());
+	    qal = *(fo->getQual());
 
-    while(f<nFragments){
+	    int length      = selectFragmentLength(fileSizeFragB,
+						   fileSizeFragBFreq,
+						   specifiedLength,
+						   specifiedScale,
+						   sizeFragList,
+						   fragLengthFreq,
+						   sizeFragments,
+						   generator,
+						   distribution);
 
-
-	int length      = 0;
-
-	//From file
-	if(fileSizeFragB          ){ 
-	    int randIndex = randomInt(0,int(sizeFragList.size())-1);
-	    length=sizeFragList[ randIndex ]; 	
-
+	    cout<<def<<endl<<seq.substr(0,length)<<endl<<"+"<<endl<<qal.substr(0,length)<<endl;
+	    f++;
 	}
-	else
-	    //from frequency
-	    if(fileSizeFragBFreq      ){ 
-		
-		double p          =  randomProb();
-		double cProbLower =  0.0;
-		bool foundL        =  false;
-		unsigned int indexFoundL=-1;
-		for(unsigned int i=0;i<fragLengthFreq.size();i++){
-		    if(cProbLower <=  p 
-		       &&
-		       p          <=  fragLengthFreq[i].cProb){						
-			indexFoundL = i;
-			foundL       = true;
-			cProbLower  = fragLengthFreq[i].cProb;
+    }else{
+     
+	while(f<nFragments){
+
+
+	    int length      = selectFragmentLength(fileSizeFragB,
+						   fileSizeFragBFreq,
+						   specifiedLength,
+						   specifiedScale,
+						   sizeFragList,
+						   fragLengthFreq,
+						   sizeFragments,
+						   generator,
+						   distribution);
+	
+	    if(length<distFromEnd)//if the length of the fragment is lesser than the distance from end, creating a slight bias against short fragments but acceptable one if distFromEnd is small enough
+		continue;
+	    if(length<minimumFragSize)
+		continue;
+
+	    if(length>maximumFragSize)
+		continue;
+
+	
+	    uint64_t idx;//         = randomInt(distFromEnd,int(chrall.size())-length-distFromEnd);
+	    uint64_t coord;
+	    bool found=false;
+	    //string temp     = chrall.substr(idx-distFromEnd,length+2*distFromEnd);
+	    string temp="";
+	    string deflineToPrint;// = defline+":";
+	    while(!found){
+		coord =randGenomicCoord(genomeLength);
+	    
+#ifdef DEBUG    
+		cerr<<"coord "<<coord<<endl;
+#endif
+
+		for(unsigned int i=0;i<chrFound.size();i++){ 
+		    
+		    if( (chrFound[i].startIndexChr+distFromEnd) <= coord 
+			&& 
+			coord <= (chrFound[i].endIndexChr-length-distFromEnd+1)){
+			found=true;
+			idx = coord-chrFound[i].startIndexChr;
+			faidx1_t faidxForName=genome->name2index[ chrFound[i].name ];
+#ifdef DEBUG    
+			cerr<<"found idx="<<idx<<" name="<<chrFound[i].name<<endl;
+#endif
+
+			temp=genome->fetchSeq(&faidxForName,coord-chrFound[i].startIndexChr-distFromEnd, length+2*distFromEnd);
+			deflineToPrint = chrFound[i].name+":";
 			break;
 		    }
 		}
 
-		if(foundL){
-		    length=fragLengthFreq[ indexFoundL ].l; 	
-		}else{
-		    length=fragLengthFreq[ randomInt(0, int(fragLengthFreq.size())-1 ) ].l; 	
-		}
-	    }	
-	    else
-		//fixed length
-		if(specifiedLength    ){ length=sizeFragments;                                      	}
-		else
-		    //scale and loc
-		    if(specifiedScale ){ length=int(distribution(generator));                              	}
-	
-	if(length<distFromEnd)//if the length of the fragment is lesser than the distance from end, creating a slight bias against short fragments but acceptable one if distFromEnd is small enough
-	    continue;
-	if(length<minimumFragSize)
-	    continue;
 
-	if(length>maximumFragSize)
-	    continue;
-
-	
-	uint64_t idx;//         = randomInt(distFromEnd,int(chrall.size())-length-distFromEnd);
-	uint64_t coord;
-	bool found=false;
-	//string temp     = chrall.substr(idx-distFromEnd,length+2*distFromEnd);
-	string temp="";
-	string deflineToPrint;// = defline+":";
-	while(!found){
-	    coord =randGenomicCoord(genomeLength);
-	    
-#ifdef DEBUG    
-	    cerr<<"coord "<<coord<<endl;
-#endif
-
-	    for(unsigned int i=0;i<chrFound.size();i++){ 
-		    
-		if( (chrFound[i].startIndexChr+distFromEnd) <= coord 
-                                                	       && 
-		                                               coord <= (chrFound[i].endIndexChr-length-distFromEnd+1)){
-		    found=true;
-		    idx = coord-chrFound[i].startIndexChr;
-		    faidx1_t faidxForName=genome->name2index[ chrFound[i].name ];
-#ifdef DEBUG    
-		    cerr<<"found idx="<<idx<<" name="<<chrFound[i].name<<endl;
-#endif
-
-		    temp=genome->fetchSeq(&faidxForName,coord-chrFound[i].startIndexChr-distFromEnd, length+2*distFromEnd);
-		    deflineToPrint = chrFound[i].name+":";
+		if(found){		
 		    break;
 		}
-	    }
-
-
-	    if(found){		
-		break;
-	    }
 
 #ifdef DEBUG    
-	    cerr<<"coord not found "<<coord<<endl;
+		cerr<<"coord not found "<<coord<<endl;
 #endif
 
-	    //cout<<"Not found coord="<<coord<<endl;
-	}
-	//return 1;
-
-	bool plusStrand;
-	if(noRev){
-	    plusStrand = true;
-	}else{
-	    plusStrand = randomBool();
-	}
-	string preFrag  = "";
-	string posFrag  = "";
-	string frag     = "";
-
-	if(!isResolvedDNAstring(temp))
-	    continue;
-	// cout<<length<<endl;
-	// cout<<distFromEnd<<endl;
-#ifdef DEBUG    	    
-	cerr<<"t:"<<temp<<"#\tl="<<length<<endl;	
-#endif
-
-	if(!plusStrand){
-#ifdef DEBUG    	    
-	    cerr<<"-"<<endl;	    
-#endif
-	    temp    = reverseComplement(temp);
-	    preFrag = temp.substr(                 0 , distFromEnd);
-	    frag    = temp.substr(       distFromEnd ,      length);
-	    posFrag = temp.substr(length+distFromEnd , distFromEnd);
-
-	    deflineToPrint = deflineToPrint+"-:"+stringify(idx)+":"+stringify(idx+length)+":"+stringify(length);
-	}else{
-#ifdef DEBUG    
-	    cerr<<"+"<<endl;
-#endif
-	    preFrag = temp.substr(                 0 , distFromEnd);
-	    frag    = temp.substr(       distFromEnd ,      length);
-	    posFrag = temp.substr(length+distFromEnd , distFromEnd);
-
-	    deflineToPrint = deflineToPrint+"+:"+stringify(idx)+":"+stringify(idx+length)+":"+stringify(length);
-	}
-
-#ifdef DEBUG    	    
-	cerr<<"t:"<<temp<<"#"<<endl;	
-#endif
-
-	if(tagb && !uniqTags){
-	    deflineToPrint=deflineToPrint+tag;	    
-	}
-
-	if(gcBiasB){
-
-	    unsigned int gcCount=0;
-	    unsigned int atCount=0;
-
-	    for(unsigned int i=0;i<temp.size();i++){		
-		if(isResolvedDNA(temp[i])){		    
-		    if(temp[i] == 'G' ||
-		       temp[i] == 'C' ){
-			gcCount++;
-		    }else{
-			atCount++;
-		    }
-		}	    
+		//cout<<"Not found coord="<<coord<<endl;
 	    }
-	    double gcContent =  double(gcCount)/double(gcCount+atCount);
-	    double pSurv     = 1/(1+exp(gcBias*(gcContent-theoMeanGC)));
-	    pSurv            = pSurv * (pdfNorm(  gcContent, theoMeanGC, theoStdvGC)/maxNormGC);
+	    //return 1;
 
-	    double rP = randomProb();
-	    bool killed = (rP>pSurv);
-	    //	    cout<<gcContent<<"\t"<<pSurv<<"\t"<<rP<<"\t"<<killed<<endl;
-	    if(killed){//killed do not increase f
+	    bool plusStrand;
+	    if(noRev){
+		plusStrand = true;
+	    }else{
+		plusStrand = randomBool();
+	    }
+	    string preFrag  = "";
+	    string posFrag  = "";
+	    string frag     = "";
+
+	    if(!isResolvedDNAstring(temp))
 		continue;
-	    }
-	}
-
-	// cerr<<"---------"<<endl;
-	// cerr<<temp<<endl;
-	// cerr<<preFrag<<endl;
-	// cerr<<frag<<endl;
-	// cerr<<posFrag<<endl;
-
-
-	if(!compFileSpecified){ //no composition file, just produce the sequences	    
-#ifdef DEBUG    
-	    cerr<<"no comp file"<<endl;
+	    // cout<<length<<endl;
+	    // cout<<distFromEnd<<endl;
+#ifdef DEBUG    	    
+	    cerr<<"t:"<<temp<<"#\tl="<<length<<endl;	
 #endif
+
+	    if(!plusStrand){
+#ifdef DEBUG    	    
+		cerr<<"-"<<endl;	    
+#endif
+		temp    = reverseComplement(temp);
+		preFrag = temp.substr(                 0 , distFromEnd);
+		frag    = temp.substr(       distFromEnd ,      length);
+		posFrag = temp.substr(length+distFromEnd , distFromEnd);
+
+		deflineToPrint = deflineToPrint+"-:"+stringify(idx)+":"+stringify(idx+length)+":"+stringify(length);
+	    }else{
+#ifdef DEBUG    
+		cerr<<"+"<<endl;
+#endif
+		preFrag = temp.substr(                 0 , distFromEnd);
+		frag    = temp.substr(       distFromEnd ,      length);
+		posFrag = temp.substr(length+distFromEnd , distFromEnd);
+
+		deflineToPrint = deflineToPrint+"+:"+stringify(idx)+":"+stringify(idx+length)+":"+stringify(length);
+	    }
+
+#ifdef DEBUG    	    
+	    cerr<<"t:"<<temp<<"#"<<endl;	
+#endif
+
+	    if(tagb && !uniqTags){
+		deflineToPrint=deflineToPrint+tag;	    
+	    }
 
 	    if(gcBiasB){
-
 
 		unsigned int gcCount=0;
 		unsigned int atCount=0;
@@ -1390,76 +1438,49 @@ int main (int argc, char *argv[]) {
 		if(killed){//killed do not increase f
 		    continue;
 		}
+	    }
+
+	    // cerr<<"---------"<<endl;
+	    // cerr<<temp<<endl;
+	    // cerr<<preFrag<<endl;
+	    // cerr<<frag<<endl;
+	    // cerr<<posFrag<<endl;
+
+
+	    if(!compFileSpecified){ //no composition file, just produce the sequences	    
+#ifdef DEBUG    
+		cerr<<"no comp file"<<endl;
+#endif
+
+		if(gcBiasB){
+
+
+		    unsigned int gcCount=0;
+		    unsigned int atCount=0;
+
+		    for(unsigned int i=0;i<temp.size();i++){		
+			if(isResolvedDNA(temp[i])){		    
+			    if(temp[i] == 'G' ||
+			       temp[i] == 'C' ){
+				gcCount++;
+			    }else{
+				atCount++;
+			    }
+			}	    
+		    }
+		    double gcContent =  double(gcCount)/double(gcCount+atCount);
+		    double pSurv     = 1/(1+exp(gcBias*(gcContent-theoMeanGC)));
+		    pSurv            = pSurv * (pdfNorm(  gcContent, theoMeanGC, theoStdvGC)/maxNormGC);
+
+		    double rP = randomProb();
+		    bool killed = (rP>pSurv);
+		    //	    cout<<gcContent<<"\t"<<pSurv<<"\t"<<rP<<"\t"<<killed<<endl;
+		    if(killed){//killed do not increase f
+			continue;
+		    }
 
 		
-	    }
-
-
-	    if(uniqTags){
-		checkUniqueness(&deflineToPrint,
-				&fragmentID2Count,
-				tagb ,
-				tag);
-	    }
-	
-	    if(outFastagzb){
-		outFastagzfp<<">"<<deflineToPrint<<"\n"<<frag<<endl;
-	    }else{
-		if(outBAMb){
-		    
-		    BamAlignment al;
-		    al.Name  = deflineToPrint;
-		    al.SetIsMapped (false);
-		    al.SetIsPaired(false);
-		    al.AlignmentFlag =  flagSingleReads;
-		    //     if(!al.AddTag("XI", "Z",string(index1S[i])) ) {cerr<<"Internal error, cannot add tag"<<endl; return 1; } 
-		    al.QueryBases  = frag;
-		    al.Qualities   = string(frag.size(), '!');
-
-		    writer.SaveAlignment(al);
-
-		}else{
-		    cout<<">"<<deflineToPrint<<"\n"<<frag<<endl;
 		}
-	    }
-
-
-	    f++;
-	}else{
-	    double probAcc = 1.0;
-	    if(plusStrand){
-
-		//5p before frag
-		for(int i=0;i<distFromEnd;i++){
-		    probAcc *= sub5pPlus[            i].s[baseResolved2int( preFrag[i]                   )];
-		}
-
-		//5p in frag
-		for(int i=0;i<distFromEnd;i++){
-		    probAcc *= sub5pPlus[i+distFromEnd].s[baseResolved2int(    frag[i]                   )];
-		}
-
-		//3p in frag
-		for(int i=0;i<distFromEnd;i++){
-		    probAcc *= sub3pPlus[            i].s[baseResolved2int(    frag[length-distFromEnd+i])];
-		}
-
-		//3p after frag
-		for(int i=0;i<distFromEnd;i++){
-		    probAcc *= sub3pPlus[i+distFromEnd].s[baseResolved2int( posFrag[i]                   )];
-		}
-
-		probAcc = probAcc/maxProbP;
-
-#ifdef DEBUG    
-		cerr<<"+ strand comp file p[acc]="<<probAcc<<"\t"<<distFromEnd<<endl;
-#endif
-
-		if(randomProb()<probAcc){
-
-#ifdef DEBUG    
-		cerr<<"accepted "<<probAcc<<endl;
-#endif
 
 
 		if(uniqTags){
@@ -1469,118 +1490,186 @@ int main (int argc, char *argv[]) {
 				    tag);
 		}
 	
-		
 		if(outFastagzb){
-			outFastagzfp<<">"<<deflineToPrint<<"\n"<<frag<<endl;
-		    }else{
-			if(outBAMb){
-
-			    BamAlignment al;
-			    al.Name  = deflineToPrint;
-			    al.SetIsMapped (false);
-			    al.SetIsPaired(false);
-			    al.AlignmentFlag =  flagSingleReads;
-			    //     if(!al.AddTag("XI", "Z",string(index1S[i])) ) {cerr<<"Internal error, cannot add tag"<<endl; return 1; } 
-			    al.QueryBases  = frag;
-			    al.Qualities   = string(frag.size(), '!');
-
-			    writer.SaveAlignment(al);
-
-			}else{
-			    cout<<">"<<deflineToPrint<<"\n"<<frag<<endl;
-			}
-		    }
+		    outFastagzfp<<">"<<deflineToPrint<<"\n"<<frag<<endl;
+		}else{
+		    if(outBAMb){
 		    
-		    f++;
-		}else{
-		    //discard
+			BamAlignment al;
+			al.Name  = deflineToPrint;
+			al.SetIsMapped (false);
+			al.SetIsPaired(false);
+			al.AlignmentFlag =  flagSingleReads;
+			//     if(!al.AddTag("XI", "Z",string(index1S[i])) ) {cerr<<"Internal error, cannot add tag"<<endl; return 1; } 
+			al.QueryBases  = frag;
+			al.Qualities   = string(frag.size(), '!');
 
-#ifdef DEBUG    
-		    cerr<<"rejected "<<probAcc<<endl;
-#endif
-		    continue;
-		}
+			writer.SaveAlignment(al);
 
-	    }else{//minus strand
-
-		//5p before frag
-		for(int i=0;i<distFromEnd;i++){
-		    probAcc *= sub5pMinus[            i].s[baseResolved2int( preFrag[i]                   )];
-		}
-
-		//5p in frag
-		for(int i=0;i<distFromEnd;i++){
-		    probAcc *= sub5pMinus[i+distFromEnd].s[baseResolved2int(    frag[i]                   )];
-		}
-
-		//3p in frag
-		for(int i=0;i<distFromEnd;i++){
-		    probAcc *= sub3pMinus[            i].s[baseResolved2int(    frag[length-distFromEnd+i])];
-		}
-
-		//3p after frag
-		for(int i=0;i<distFromEnd;i++){
-		    probAcc *= sub3pMinus[i+distFromEnd].s[baseResolved2int( posFrag[i]                   )];
-		}
-
-		probAcc = probAcc/maxProbM;
-
-#ifdef DEBUG    
-		cerr<<"- strand comp file p[acc]="<<probAcc<<"\t"<<distFromEnd<<endl;
-#endif
-
-		if(randomProb()<probAcc){
-		    //cout<<deflineToPrint<<"\n"<<frag<<endl;
-#ifdef DEBUG    
-		    cerr<<"accepted "<<probAcc<<endl;
-#endif
-
-		    if(uniqTags){
-			checkUniqueness(&deflineToPrint,
-					&fragmentID2Count,
-					tagb ,
-					tag);
-		    }
-
-		    if(outFastagzb){
-			outFastagzfp<<">"<<deflineToPrint<<"\n"<<frag<<endl;
 		    }else{
-			if(outBAMb){
-			    
-			    BamAlignment al;
-			    al.Name  = deflineToPrint;
-			    al.SetIsMapped (false);
-			    al.SetIsPaired(false);
-			    al.AlignmentFlag =  flagSingleReads;
-			    //     if(!al.AddTag("XI", "Z",string(index1S[i])) ) {cerr<<"Internal error, cannot add tag"<<endl; return 1; } 
-			    al.QueryBases  = frag;
-			    al.Qualities   = string(frag.size(), '!');
-
-			    writer.SaveAlignment(al);
-
-			}else{
-			    cout<<">"<<deflineToPrint<<"\n"<<frag<<endl;
-			}
+			cout<<">"<<deflineToPrint<<"\n"<<frag<<endl;
 		    }
-
-		    f++;
-		}else{
-		    //discard
-#ifdef DEBUG    
-		    cerr<<"rejected "<<probAcc<<endl;
-#endif
-		    continue;
 		}
 
 
-	    }//minus strand
+		f++;
+	    }else{
+		double probAcc = 1.0;
+		if(plusStrand){
+
+		    //5p before frag
+		    for(int i=0;i<distFromEnd;i++){
+			probAcc *= sub5pPlus[            i].s[baseResolved2int( preFrag[i]                   )];
+		    }
+
+		    //5p in frag
+		    for(int i=0;i<distFromEnd;i++){
+			probAcc *= sub5pPlus[i+distFromEnd].s[baseResolved2int(    frag[i]                   )];
+		    }
+
+		    //3p in frag
+		    for(int i=0;i<distFromEnd;i++){
+			probAcc *= sub3pPlus[            i].s[baseResolved2int(    frag[length-distFromEnd+i])];
+		    }
+
+		    //3p after frag
+		    for(int i=0;i<distFromEnd;i++){
+			probAcc *= sub3pPlus[i+distFromEnd].s[baseResolved2int( posFrag[i]                   )];
+		    }
+
+		    probAcc = probAcc/maxProbP;
+
+#ifdef DEBUG    
+		    cerr<<"+ strand comp file p[acc]="<<probAcc<<"\t"<<distFromEnd<<endl;
+#endif
+
+		    if(randomProb()<probAcc){
+
+#ifdef DEBUG    
+			cerr<<"accepted "<<probAcc<<endl;
+#endif
+
+
+			if(uniqTags){
+			    checkUniqueness(&deflineToPrint,
+					    &fragmentID2Count,
+					    tagb ,
+					    tag);
+			}
+	
+		
+			if(outFastagzb){
+			    outFastagzfp<<">"<<deflineToPrint<<"\n"<<frag<<endl;
+			}else{
+			    if(outBAMb){
+
+				BamAlignment al;
+				al.Name  = deflineToPrint;
+				al.SetIsMapped (false);
+				al.SetIsPaired(false);
+				al.AlignmentFlag =  flagSingleReads;
+				//     if(!al.AddTag("XI", "Z",string(index1S[i])) ) {cerr<<"Internal error, cannot add tag"<<endl; return 1; } 
+				al.QueryBases  = frag;
+				al.Qualities   = string(frag.size(), '!');
+
+				writer.SaveAlignment(al);
+
+			    }else{
+				cout<<">"<<deflineToPrint<<"\n"<<frag<<endl;
+			    }
+			}
+		    
+			f++;
+		    }else{
+			//discard
+
+#ifdef DEBUG    
+			cerr<<"rejected "<<probAcc<<endl;
+#endif
+			continue;
+		    }
+
+		}else{//minus strand
+
+		    //5p before frag
+		    for(int i=0;i<distFromEnd;i++){
+			probAcc *= sub5pMinus[            i].s[baseResolved2int( preFrag[i]                   )];
+		    }
+
+		    //5p in frag
+		    for(int i=0;i<distFromEnd;i++){
+			probAcc *= sub5pMinus[i+distFromEnd].s[baseResolved2int(    frag[i]                   )];
+		    }
+
+		    //3p in frag
+		    for(int i=0;i<distFromEnd;i++){
+			probAcc *= sub3pMinus[            i].s[baseResolved2int(    frag[length-distFromEnd+i])];
+		    }
+
+		    //3p after frag
+		    for(int i=0;i<distFromEnd;i++){
+			probAcc *= sub3pMinus[i+distFromEnd].s[baseResolved2int( posFrag[i]                   )];
+		    }
+
+		    probAcc = probAcc/maxProbM;
+
+#ifdef DEBUG    
+		    cerr<<"- strand comp file p[acc]="<<probAcc<<"\t"<<distFromEnd<<endl;
+#endif
+
+		    if(randomProb()<probAcc){
+			//cout<<deflineToPrint<<"\n"<<frag<<endl;
+#ifdef DEBUG    
+			cerr<<"accepted "<<probAcc<<endl;
+#endif
+
+			if(uniqTags){
+			    checkUniqueness(&deflineToPrint,
+					    &fragmentID2Count,
+					    tagb ,
+					    tag);
+			}
+
+			if(outFastagzb){
+			    outFastagzfp<<">"<<deflineToPrint<<"\n"<<frag<<endl;
+			}else{
+			    if(outBAMb){
+			    
+				BamAlignment al;
+				al.Name  = deflineToPrint;
+				al.SetIsMapped (false);
+				al.SetIsPaired(false);
+				al.AlignmentFlag =  flagSingleReads;
+				//     if(!al.AddTag("XI", "Z",string(index1S[i])) ) {cerr<<"Internal error, cannot add tag"<<endl; return 1; } 
+				al.QueryBases  = frag;
+				al.Qualities   = string(frag.size(), '!');
+
+				writer.SaveAlignment(al);
+
+			    }else{
+				cout<<">"<<deflineToPrint<<"\n"<<frag<<endl;
+			    }
+			}
+
+			f++;
+		    }else{
+			//discard
+#ifdef DEBUG    
+			cerr<<"rejected "<<probAcc<<endl;
+#endif
+			continue;
+		    }
+
+
+		}//minus strand
 	    
-	}
+	    }
 
-	if( (f-1)%100000 == 0 && (f-1)!=0){
-	    cerr<<"Produced "<<thousandSeparator(f-1)<<" out of "<< thousandSeparator(nFragments) <<" sequences"<<endl;
-	}
+	    if( (f-1)%100000 == 0 && (f-1)!=0){
+		cerr<<"Produced "<<thousandSeparator(f-1)<<" out of "<< thousandSeparator(nFragments) <<" sequences"<<endl;
+	    }
 
+	}
     }
 
     if(outFastagzb){
