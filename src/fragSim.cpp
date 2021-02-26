@@ -378,10 +378,14 @@ int main (int argc, char *argv[]) {
     string outFastagz       ;
     bool   outFastagzb=false;
     string outBAM           ;
-    bool   outBAMb            =false;
-    bool     tagb             =false;
-    bool     uppercase        =true;
+    bool   outBAMb    =false;
+    bool   tagb       =false;
+    bool   uppercase  =true;
+    bool   circ       =false;
+    string circName   ="";
+    uint64_t circOffset=0;
 
+    
     string   tag              = "";
     bool uniqTags=false;
     bool fastqMode=false;
@@ -397,7 +401,7 @@ int main (int argc, char *argv[]) {
 	"\t\t"+"-n\t"+"[number]" +"\t\t\t"+"Generate [number] fragments (default: "+stringify(nFragments)+")"+"\n"+
 	"\n"+
 	"\t\t"+"--comp\t"+"[file]"+"\t\t\t\t"+"Base composition for the fragments (default none)"+"\n"+
-	"\t\t"+"--dist\t"+"[file]"+"\t\t\t\t"+"Distance from ends to consider  (default: "+stringify(distFromEnd)+")"+"\n"+
+	"\t\t"+"--dist\t"+"[file]"+"\t\t\t\t"+"Distance from ends to consider for base composition (default: "+stringify(distFromEnd)+")"+"\n"+
 	"\t\t"+"\t"+""+"\t\t\t\t"+"if this is not specified, the base composition"+"\n"+
 	"\t\t"+"\t"+""+"\t\t\t\t"+"will only reflect the chromosome file used"+"\n"+
 	"\t\t"+"--norev\t"+""+"\t\t\t\t"+"Do not reverse complement (default: rev. comp half of seqs.)"+"\n"+
@@ -406,6 +410,7 @@ int main (int argc, char *argv[]) {
 	"\t\t"+"    \t"+""+"\t\t\t\t"+"just want to trim them according to certain fragment lengths\n"+
 	"\t\t"+"    \t"+""+"\t\t\t\t"+"please use either fastq.gz or fq.gz (Default:  "+booleanAsString(fastqMode)+")"+"\n"+
 	"\t\t"+"    \t"+""+"\t\t\t\t"+"Please note that this mode will write fastq to STDOUT\n"+
+	"\t\t"+"--circ\t"+"[REF NAME]"+"\t\t\t\t"+"Assume [REF NAME] is circular"+"\n"+
 
 	"\n"+
 	"\tOutput options\n"+
@@ -523,6 +528,13 @@ int main (int argc, char *argv[]) {
 
 	if(string(argv[i]) == "--case"  ){
 	    uppercase=false;
+	    continue;
+	}
+
+	if(string(argv[i]) == "--circ"  ){
+	    circ=true;
+	    circName = string(argv[i+1]);
+	    i++;
 	    continue;
 	}
 
@@ -1038,6 +1050,8 @@ int main (int argc, char *argv[]) {
     uint64_t genomeLength=0;
     vector<chrinfo> chrFound;
 
+    
+    
     typedef map<string,faidx1_t>::iterator it_type;
     
     if(fastqMode){
@@ -1120,9 +1134,16 @@ int main (int argc, char *argv[]) {
 
     }//if not fastq
     
-        
 
-
+    //if circ was selected, try to check if the chr exists
+    if(circ){
+	faidx1_t faidxForName=genome->name2index[ circName ];			
+	if(faidxForName.offset == 0){
+	    cerr<<"ERROR: Cannot find chromosome "<<circName<<" which is specified via --circ"<<endl; 
+	    return 1;
+	}
+	circOffset=faidxForName.offset;
+    }
     
 
 #ifdef DEBUG    
@@ -1339,10 +1360,44 @@ int main (int argc, char *argv[]) {
 		    
 		    if( (chrFound[i].startIndexChr+distFromEnd) <= coord 
 			&& 
-			coord <= (chrFound[i].endIndexChr-length-distFromEnd+1)){
-			found=true;
+			//(coord <= (chrFound[i].endIndexChr-length-distFromEnd+1))
+			(coord <= (chrFound[i].endIndexChr-distFromEnd+1))
+			){
 			idx = coord-chrFound[i].startIndexChr;
 			faidx1_t faidxForName=genome->name2index[ chrFound[i].name ];
+
+			if(circ){//we consider some references to be circular
+			    if( circOffset==faidxForName.offset){//it is the circular chromosome
+				found=true;
+				if((coord <= (chrFound[i].endIndexChr-length-distFromEnd+1))){//distance to end is reasonable, no need to circularize
+				    
+				}else{//need to circularize
+				    string temp1=genome->fetchSeq(&faidxForName,
+								  coord-chrFound[i].startIndexChr-distFromEnd,
+								  chrFound[i].endIndexChr-(coord-distFromEnd));
+
+				    int l2= (length+2*distFromEnd-(chrFound[i].endIndexChr-(coord-distFromEnd)));
+				    
+				    string temp2=genome->fetchSeq(&faidxForName,
+				     				  0,
+				     				  l2);				    
+				    temp=temp1+temp2;
+
+				    deflineToPrint = chrFound[i].name+":";					  
+				    break;				    
+				}
+			    }else{ // not the circular chromosome
+				if((coord <= (chrFound[i].endIndexChr-length-distFromEnd+1))){//distance to end is reasonable
+				    found=true;
+				}else{//too close to the end
+				    break;
+				}
+			    }
+
+			}else{
+			    found=true;
+			}
+			
 #ifdef DEBUG    
 			cerr<<"found idx="<<idx<<" name="<<chrFound[i].name<<endl;
 #endif
@@ -1351,7 +1406,7 @@ int main (int argc, char *argv[]) {
 			deflineToPrint = chrFound[i].name+":";
 			break;
 		    }
-		}
+		}//end for each chr
 
 
 		if(found){		
