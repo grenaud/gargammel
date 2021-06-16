@@ -357,7 +357,6 @@ int main (int argc, char *argv[]) {
     double gcBias             = 0;
     bool   gcBiasB            = false;
 
-
     
     vector<subrates> sub5pPlus;
     vector<subrates> sub5pMinus;
@@ -389,7 +388,8 @@ int main (int argc, char *argv[]) {
     string   tag              = "";
     bool uniqTags=false;
     bool fastqMode=false;
-    
+    int trim5pfastq = 0;
+
     bool produceUnCompressedBAM=false;
     map<string, unsigned int> fragmentID2Count;
     
@@ -410,6 +410,7 @@ int main (int argc, char *argv[]) {
 	"\t\t"+"    \t"+""+"\t\t\t\t"+"just want to trim them according to certain fragment lengths\n"+
 	"\t\t"+"    \t"+""+"\t\t\t\t"+"please use either fastq.gz or fq.gz (Default:  "+booleanAsString(fastqMode)+")"+"\n"+
 	"\t\t"+"    \t"+""+"\t\t\t\t"+"Please note that this mode will write fastq to STDOUT\n"+
+	"\t\t"+"--trim5p\t"+"[length]"+"\t\t\t\t"+"Trim [length] bases from the fragments in fastq mode"+"\n"+
 	"\t\t"+"--circ\t"+"[REF NAME]"+"\t\t\t\t"+"Assume [REF NAME] is circular"+"\n"+
 
 	"\n"+
@@ -473,6 +474,12 @@ int main (int argc, char *argv[]) {
 
 	if(string(argv[i]) == "-uniq" ){
 	    uniqTags = true;
+	    i++; 
+	    continue;
+	}
+
+	if(string(argv[i]) == "--trim5p" ){
+	    trim5pfastq=destringify<int>(argv[i+1]);
 	    i++; 
 	    continue;
 	}
@@ -610,6 +617,11 @@ int main (int argc, char *argv[]) {
     // 	distFromEnd=0;
     // }
     //cerr<<distFromEnd<<endl;
+
+    if( (trim5pfastq>0) && !fastqMode){
+	cerr<<"Error: cannot specify --trim5p in non-fastq mode"<<endl;
+	return 1;
+    }
 
     if(specifiedLength){
 	if(sizeFragments>maximumFragSize){
@@ -1315,8 +1327,11 @@ int main (int argc, char *argv[]) {
 						   sizeFragments,
 						   generator,
 						   distribution);
-
-	    cout<<def<<endl<<seq.substr(0,length)<<endl<<"+"<<endl<<qal.substr(0,length)<<endl;
+	    if( int(seq.length()) < (trim5pfastq+length) ){
+		cerr<<"ERROR: The sequence "<<def<<" has a length of "<<seq.length()<<" but we want a length of "<<length<<" and trim "<<trim5pfastq<<" from the 5' end"<<endl;
+		return 1;
+	    }
+	    cout<<def<<endl<<seq.substr(trim5pfastq,length)<<endl<<"+"<<endl<<qal.substr(trim5pfastq,length)<<endl;
 	    f++;
 	}
     }else{
