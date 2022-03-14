@@ -40,10 +40,27 @@ if [ "$#" -eq 2 ]; then
     email=$2;
 fi
 
+PYTHONCMD="python"
+if ! command -v $PYTHONCMD &> /dev/null
+then
+    echo " "$PYTHONCMD" could not be found, trying python2.7"
+    PYTHONCMD="python2.7"
+fi
+
+if ! command -v $PYTHONCMD &> /dev/null
+then
+    echo " "$PYTHONCMD" could not be found, exiting"
+    exit;
+fi
+
+
 echo "Using email: $email"
 echo "Downloading reference genomes"
 
-for i in `awk -F\| '{if($NF ~ /s__/ && $NF !~ /unclassified/) print $NF}' ${taxa} | sed -r 's/\s+/\t/g'  |sort -k2,2rg | python $SCRIPTPATH/src/select_random_speciesftp.py`; 
+#cmdawk="awk -F\| '{if($NF ~ /s__/ && $NF !~ /unclassified/) print $NF}' ${taxa} | sed -r 's/\s+/\t/g'  |sort -k2,2rg | $PYTHONCMD $SCRIPTPATH/src/select_random_speciesftp.py"
+#echo $cmdawk;
+#for i in `$cmdawk`;
+for i in `awk -F\| '{if($NF ~ /s__/ && $NF !~ /unclassified/) print $NF}' ${taxa} | sed -r 's/\s+/\t/g'  |sort -k2,2rg | $PYTHONCMD $SCRIPTPATH/src/select_random_speciesftp.py`
 do 
     echo "Retrieving "$i;
     wget --ftp-user=$user --ftp-password=$email -nv -P $RUNPATH"/"fasta $i;

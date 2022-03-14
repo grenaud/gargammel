@@ -21,8 +21,7 @@ logging.info(logformat("#Microbial_Strain", "ID", "ID_asm", "FTP"))
 sum_abundance = 0
 species_lst = []
 metanames = {}
-metanames_path = os.path.join(os.path.dirname(__file__),
-                              "species.ftp.metanames.txt.gz")
+metanames_path = os.path.join(os.path.dirname(__file__),"species.ftp.metanames.txt.gz")
 
 
 with gzip.open(metanames_path, "r") as fin:
@@ -38,6 +37,7 @@ try:
 except IndexError:
     abundance_cut_off = 0.1  # in percentages (1/1000) min relative abundance
 count_species_filter = 0
+
 for line in fileinput.input():
     species, abundance = re.split("\s+", line.rstrip())
     if float(abundance) < abundance_cut_off:
@@ -51,21 +51,17 @@ for line in fileinput.input():
         ID, ftp = hits[out]
         ID_asm = ftp.split("/")[-1]
         ftp_fullpath = ftp+"/"+ID_asm+"_genomic.fna.gz"
-
-        logging.info(logformat(species, ID, ID_asm,
-                               ftp_fullpath))
+        #print("ftp_fullpath");
+        #print(ftp_fullpath);
+        #sys.exit(1);
+        logging.info(logformat(species, ID, ID_asm,ftp_fullpath))
         sys.stdout.write(ftp_fullpath+"\n")
         sum_abundance += float(abundance)
         species_lst.append((ID_asm+"_genomic.fna", float(abundance)))
     except KeyError:
-        sys.stderr.write("{} is not present"
-                         " in the database\n".format(species))
+        sys.stderr.write("{} is not present in the database\n".format(species))
 
-sys.stderr.write(str(len(species_lst)) +
-                 " genomes will be downloaded from ncbi.\n" +
-                 str(count_species_filter) + " microbe abundances were below" +
-                 " the minimum relative abundance cut off on " +
-                 str(abundance_cut_off) + "%\n")
+sys.stderr.write(str(len(species_lst)) + " genomes will be downloaded from ncbi.\n" + str(count_species_filter) + " microbe abundances were below" + " the minimum relative abundance cut off on " + str(abundance_cut_off) + "%\n")
 
 listfile = currentpwd+"/fasta/list"
 
