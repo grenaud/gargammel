@@ -39,7 +39,7 @@ except IndexError:
 count_species_filter = 0
 
 for line in fileinput.input():
-    species, abundance = re.split("\s+", line.decode().rstrip())
+    species, abundance = re.split("\s+", line.rstrip())
     if float(abundance) < abundance_cut_off:
         count_species_filter += 1
         # sys.stderr.write(species_filter(species, abundance,
