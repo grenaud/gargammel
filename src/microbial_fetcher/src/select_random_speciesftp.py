@@ -26,7 +26,7 @@ metanames_path = os.path.join(os.path.dirname(__file__),"species.ftp.metanames.t
 
 with gzip.open(metanames_path, "r") as fin:
     for line in fin:
-        ID, ftp, species = re.split("\s+", line.rstrip("\n"))
+        ID, ftp, species = re.split("\s+", line.decode().rstrip("\n"))
         if species in metanames.keys():
             metanames[species].append((ID, ftp))
         else:
@@ -39,7 +39,7 @@ except IndexError:
 count_species_filter = 0
 
 for line in fileinput.input():
-    species, abundance = re.split("\s+", line.rstrip())
+    species, abundance = re.split("\s+", line.decode().rstrip())
     if float(abundance) < abundance_cut_off:
         count_species_filter += 1
         # sys.stderr.write(species_filter(species, abundance,

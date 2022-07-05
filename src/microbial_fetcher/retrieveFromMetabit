@@ -49,6 +49,13 @@ fi
 
 if ! command -v $PYTHONCMD &> /dev/null
 then
+    echo " "$PYTHONCMD" could not be found, trying python3"
+    PYTHONCMD="python3"
+fi
+
+
+if ! command -v $PYTHONCMD &> /dev/null
+then
     echo " "$PYTHONCMD" could not be found, exiting"
     exit;
 fi

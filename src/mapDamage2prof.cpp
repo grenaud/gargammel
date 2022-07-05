@@ -58,7 +58,7 @@ int main (int argc, char *argv[]) {
 
     const string usage=string("\t"+string(argv[0])+
                               " [options]  [mis.txt]"+"\n\n"+
-			      " This program reads a misincorporation file and produces .prof files\n\n"+
+			      " This program reads a misincorporation file from mapDamage and produces .prof files\n\n"+
 			      
 			      "\t\t"+"-5p\t[output file]\tOutput profile for the 5' end (Default: "+stringify(file5p)+")\n"+
 			      "\t\t"+"-3p\t[output file]\tOutput profile for the 3' end (Default: "+stringify(file3p)+")\n"+
