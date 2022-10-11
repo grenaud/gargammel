@@ -75,6 +75,8 @@ inline double maxSubrates(const subrates & sub){
     return maxsub;
 }
 
+
+//The srand function should have been called in the main
 uint64_t  randGenomicCoord(const uint64_t & genomeLength){     
 
     while(true){
@@ -140,11 +142,12 @@ inline int selectFragmentLength(const bool fileSizeFragB,
 				const vector<freqFragLength> & fragLengthFreq,
 				const int & sizeFragments,
 				default_random_engine & generator,
-				lognormal_distribution<double> & distribution){
+				lognormal_distribution<double> & distribution,
+				bool seedSpecified){
     int length=0;
     //From file
     if(fileSizeFragB          ){ 
-	int randIndex = randomInt(0,int(sizeFragList.size())-1);
+	int randIndex = randomInt(0,int(sizeFragList.size())-1,!seedSpecified);
 	length=sizeFragList[ randIndex ]; 	
 
     }
@@ -152,7 +155,7 @@ inline int selectFragmentLength(const bool fileSizeFragB,
 	//from frequency
 	if(fileSizeFragBFreq      ){ 
 		
-	    double p          =  randomProb();
+	    double p          =  randomProb(!seedSpecified);
 	    double cProbLower =  0.0;
 	    bool foundL        =  false;
 	    unsigned int indexFoundL=-1;
@@ -170,7 +173,7 @@ inline int selectFragmentLength(const bool fileSizeFragB,
 	    if(foundL){
 		length=fragLengthFreq[ indexFoundL ].l; 	
 	    }else{
-		length=fragLengthFreq[ randomInt(0, int(fragLengthFreq.size())-1 ) ].l; 	
+		length=fragLengthFreq[ randomInt(0, int(fragLengthFreq.size())-1 , !seedSpecified) ].l; 	
 	    }
 	}	
 	else
@@ -357,6 +360,8 @@ int main (int argc, char *argv[]) {
     double gcBias             = 0;
     bool   gcBiasB            = false;
 
+    bool seedSpecified=false;
+    unsigned int seed;
     
     vector<subrates> sub5pPlus;
     vector<subrates> sub5pMinus;
@@ -412,6 +417,7 @@ int main (int argc, char *argv[]) {
 	"\t\t"+"    \t"+""+"\t\t\t\t"+"Please note that this mode will write fastq to STDOUT\n"+
 	"\t\t"+"--trim5p\t"+"[length]"+"\t\t\t\t"+"Trim [length] bases from the fragments in fastq mode"+"\n"+
 	"\t\t"+"--circ\t"+"[REF NAME]"+"\t\t\t\t"+"Assume [REF NAME] is circular"+"\n"+
+	"\t\t"+"--seed\t"+"[int]"+"\t\t\t\t"+"Use [seed] as seed for the random number generator (default random seed each execution)"+"\n"+
 
 	"\n"+
 	"\tOutput options\n"+
@@ -461,7 +467,7 @@ int main (int argc, char *argv[]) {
 	cout<<usage<<endl;
 	return 1;
     }
-
+    
     for(int i=1;i<(argc-1);i++){ //all but the last 3 args
 	
 	if(string(argv[i]) == "--comp" ){
@@ -494,6 +500,13 @@ int main (int argc, char *argv[]) {
 	    location=destringify<double>(argv[i+1]);
 	    i++;
 	    specifiedLoc=true;
+	    continue;
+	}
+
+	if(string(argv[i]) == "--seed" ){
+	    seed=destringify<unsigned int>(argv[i+1]);
+	    i++;
+	    seedSpecified=true;
 	    continue;
 	}
 
@@ -691,6 +704,18 @@ int main (int argc, char *argv[]) {
 	specifiedLength = true;
     }
 
+    //If the user has specified the seed, use it
+    if(seedSpecified){
+	srand(   seed );
+	srand48( seed );
+	generator.seed(seed);
+    }else{
+	//we will call it for random
+	timeval time;
+	gettimeofday(&time, NULL);
+	srand(  long((time.tv_sec * 1000) + (time.tv_usec / 1000)) );
+    }
+    
     // Use fragment size list
     vector<int> sizeFragList;
     if(fileSizeFragB){ 
@@ -761,9 +786,6 @@ int main (int argc, char *argv[]) {
 
     
 
-    timeval time;
-    gettimeofday(&time, NULL);
-    srand(  long((time.tv_sec * 1000) + (time.tv_usec / 1000)) );
 
 
 
@@ -1213,7 +1235,7 @@ int main (int argc, char *argv[]) {
 	    if(noRev){
 		plusStrand = true;
 	    }else{
-		plusStrand = randomBool();
+		plusStrand = randomBool(!seedSpecified);
 	    }
 
 	    if(!isResolvedDNAstring(temp))
@@ -1326,7 +1348,8 @@ int main (int argc, char *argv[]) {
 						   fragLengthFreq,
 						   sizeFragments,
 						   generator,
-						   distribution);
+						   distribution,
+						   seedSpecified);
 	    if( int(seq.length()) < (trim5pfastq+length) ){
 		cerr<<"ERROR: The sequence "<<def<<" has a length of "<<seq.length()<<" but we want a length of "<<length<<" and trim "<<trim5pfastq<<" from the 5' end"<<endl;
 		return 1;
@@ -1347,7 +1370,8 @@ int main (int argc, char *argv[]) {
 						   fragLengthFreq,
 						   sizeFragments,
 						   generator,
-						   distribution);
+						   distribution,
+						   seedSpecified);
 	
 	    if(length<distFromEnd)//if the length of the fragment is lesser than the distance from end, creating a slight bias against short fragments but acceptable one if distFromEnd is small enough
 		continue;
@@ -1440,7 +1464,7 @@ int main (int argc, char *argv[]) {
 	    if(noRev){
 		plusStrand = true;
 	    }else{
-		plusStrand = randomBool();
+		plusStrand = randomBool(!seedSpecified);
 	    }
 	    string preFrag  = "";
 	    string posFrag  = "";
@@ -1502,7 +1526,7 @@ int main (int argc, char *argv[]) {
 		double pSurv     = 1/(1+exp(gcBias*(gcContent-theoMeanGC)));
 		pSurv            = pSurv * (pdfNorm(  gcContent, theoMeanGC, theoStdvGC)/maxNormGC);
 
-		double rP = randomProb();
+		double rP = randomProb(!seedSpecified);
 		bool killed = (rP>pSurv);
 		//	    cout<<gcContent<<"\t"<<pSurv<<"\t"<<rP<<"\t"<<killed<<endl;
 		if(killed){//killed do not increase f
@@ -1542,7 +1566,7 @@ int main (int argc, char *argv[]) {
 		    double pSurv     = 1/(1+exp(gcBias*(gcContent-theoMeanGC)));
 		    pSurv            = pSurv * (pdfNorm(  gcContent, theoMeanGC, theoStdvGC)/maxNormGC);
 
-		    double rP = randomProb();
+		    double rP = randomProb(!seedSpecified);
 		    bool killed = (rP>pSurv);
 		    //	    cout<<gcContent<<"\t"<<pSurv<<"\t"<<rP<<"\t"<<killed<<endl;
 		    if(killed){//killed do not increase f
@@ -1613,7 +1637,7 @@ int main (int argc, char *argv[]) {
 		    cerr<<"+ strand comp file p[acc]="<<probAcc<<"\t"<<distFromEnd<<endl;
 #endif
 
-		    if(randomProb()<probAcc){
+		    if(randomProb(!seedSpecified)<probAcc){
 
 #ifdef DEBUG    
 			cerr<<"accepted "<<probAcc<<endl;
@@ -1687,7 +1711,7 @@ int main (int argc, char *argv[]) {
 		    cerr<<"- strand comp file p[acc]="<<probAcc<<"\t"<<distFromEnd<<endl;
 #endif
 
-		    if(randomProb()<probAcc){
+		    if(randomProb(!seedSpecified)<probAcc){
 			//cout<<deflineToPrint<<"\n"<<frag<<endl;
 #ifdef DEBUG    
 			cerr<<"accepted "<<probAcc<<endl;
