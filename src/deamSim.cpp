@@ -105,6 +105,9 @@ int main (int argc, char *argv[]) {
     bool   singleDeam         = false;
     bool   doubleDeam         = false;
     
+    bool seedSpecified=false;
+    unsigned int seed=0;
+    
     const string usage=string("\t"+string(argv[0])+
                               " [options]  [fasta or BAM file]"+"\n\n"+
 			      " This program reads a fasta (default) or BAM file containing aDNA fragments and\n"+
@@ -122,8 +125,10 @@ int main (int argc, char *argv[]) {
 			      "\t\t"+"-v\t"+""            +"\t\t\t\t"+"verbose mode"+"\n"+
 			      "\t\t"+"-last\t"+""            +"\t\t\t\t"+"If matfile is used, do not use the substitution rates of the"+"\n"+
 			      "\t\t"+"\t"+""             +"\t\t\t\t"+"last row over the rest of the molecule (default: no data = use last row)"+"\n"+
+			      " Generic options:\n"+
+			      "\t\t"+"--seed\t"+"[int]"       +"\t\t\t\t"+"Use [seed] as seed for the random number generator (default random seed each execution)"+"\n"+
 
-
+			      
 			      "\n"
 			      +" Mandatory deamination options:\n"+ 
 			      "\tSpecify either:\n"+
@@ -219,6 +224,13 @@ int main (int argc, char *argv[]) {
 	    continue;
 	}
 
+	if(string(argv[i]) == "--seed" ){
+	    seed=destringify<unsigned int>(argv[i+1]);
+	    i++;
+	    seedSpecified=true;
+	    continue;
+	}
+	
 	if(string(argv[i]) == "-matfile" ){
 	    matrixFile          = string(argv[i+1]);
 	    matrixFileSpecified = true;
@@ -400,6 +412,14 @@ int main (int argc, char *argv[]) {
     }
     string inputFile = string(argv[argc-1]);
 
+
+    if(seedSpecified){
+	srand(   seed );
+	srand48( seed );
+	generator.seed(seed);
+    }else{
+    }
+    
 
     // if(matrixFileSpecified && matrixSpecified){
     // 	cerr << "Do not specify both -matrix and -matrixfile "<<endl;
@@ -1166,7 +1186,7 @@ int main (int argc, char *argv[]) {
 		    if( ((i+1)<=overhang5p) && ((int(seq.size())-i)<=overhang3p) ){
 			if(i<int(double(seq.size())*0.5)){
 			    if(seq[i] == 'C'){
-				if( randomProb() < sBrgs5p ){
+				if( randomProb(!seedSpecified) < sBrgs5p ){
 				    deamPos.push_back(i+1);
 				    seq[i] = 'T';
 				    deaminated=true;
@@ -1174,7 +1194,7 @@ int main (int argc, char *argv[]) {
 			    }
 			}else{
 			    if(seq[i] == 'C'){
-				if( randomProb() < sBrgs3p ){
+				if( randomProb(!seedSpecified) < sBrgs3p ){
 				    deamPos.push_back(i+1);
 				    seq[i] = 'T';
 				    deaminated=true;
@@ -1186,7 +1206,7 @@ int main (int argc, char *argv[]) {
 			//just in 3p overhand
 			if( !((i+1)<=overhang5p) &&  ((int(seq.size())-i)<=overhang3p) ){
 			    if(seq[i] == 'C'){
-				if( randomProb() < sBrgs3p ){
+				if( randomProb(!seedSpecified) < sBrgs3p ){
 				    deamPos.push_back(i+1);
 				    seq[i] = 'T';
 				    deaminated=true;
@@ -1199,7 +1219,7 @@ int main (int argc, char *argv[]) {
 			    if(  ((i+1)<=overhang5p) && !((int(seq.size())-i)<=overhang3p) ){
 
 				if(seq[i] == 'C'){
-				    if( randomProb() < sBrgs5p ){
+				    if( randomProb(!seedSpecified) < sBrgs5p ){
 					deamPos.push_back(i+1);
 					seq[i] = 'T';
 					deaminated=true;
@@ -1231,7 +1251,7 @@ int main (int argc, char *argv[]) {
 			cerr<<"5p"<<endl;
 #endif
 			if(seq[i] == 'C'){
-			    if( randomProb() < sBrgs5p ){
+			    if( randomProb(!seedSpecified) < sBrgs5p ){
 				deamPos.push_back(i+1);
 				seq[i] = 'T';
 				deaminated=true;
@@ -1245,7 +1265,7 @@ int main (int argc, char *argv[]) {
 			    cerr<<"3p"<<endl;
 #endif
 			    if(seq[i] == 'C'){
-				if( randomProb() < sBrgs3p ){
+				if( randomProb(!seedSpecified) < sBrgs3p ){
 				    deamPos.push_back(i+1);
 				    seq[i] = 'T';
 				    deaminated=true;
@@ -1256,7 +1276,7 @@ int main (int argc, char *argv[]) {
 			    cerr<<"dd"<<endl;
 #endif
 			    if(seq[i] == 'C'){
-				if( randomProb() < dBrgs ){
+				if( randomProb(!seedSpecified) < dBrgs ){
 				    deamPos.push_back(i+1);
 				    seq[i] = 'T';
 				    deaminated=true;
@@ -1300,7 +1320,7 @@ int main (int argc, char *argv[]) {
 		    //just apply sBrgs over the entire fragment
 		    for(int i=0;i<int(seq.size());i++){
 			if(seq[i] == 'C'){
-			    if( randomProb() < sBrgs ){
+			    if( randomProb(!seedSpecified) < sBrgs ){
 				deamPos.push_back(i+1);
 				seq[i] = 'T';
 				deaminated=true;
@@ -1316,7 +1336,7 @@ int main (int argc, char *argv[]) {
 			cerr<<i<<"\t"<<placedNick<<endl;
 #endif
 			if(!placedNick)
-			    if(randomProb() < vBrgs){ //nick is present
+			    if(randomProb(!seedSpecified) < vBrgs){ //nick is present
 				placedNick=true;
 				indexNick =i;			
 			    }
@@ -1330,7 +1350,7 @@ int main (int argc, char *argv[]) {
 				cerr<<"5pn"<<endl;
 #endif
 				if(seq[i] == 'C'){
-				    if( randomProb() < sBrgs ){
+				    if( randomProb(!seedSpecified) < sBrgs ){
 					deamPos.push_back(i+1);
 					seq[i] = 'T';
 					deaminated=true;
@@ -1344,7 +1364,7 @@ int main (int argc, char *argv[]) {
 				    cerr<<"3pn"<<endl;
 #endif
 				    if(seq[i] == 'G'){
-					if( randomProb() < sBrgs ){
+					if( randomProb(!seedSpecified) < sBrgs ){
 					    deamPos.push_back(i+1);
 					    seq[i] = 'A';
 					    deaminated=true;
@@ -1355,7 +1375,7 @@ int main (int argc, char *argv[]) {
 				    cerr<<"ddn"<<endl;
 #endif						    
 				    if(seq[i] == 'G'){
-					if( randomProb() < dBrgs ){
+					if( randomProb(!seedSpecified) < dBrgs ){
 					    deamPos.push_back(i+1);
 					    seq[i] = 'A';
 					    deaminated=true;
@@ -1374,7 +1394,7 @@ int main (int argc, char *argv[]) {
 				cerr<<"5p"<<endl;
 #endif
 				if(seq[i] == 'C'){
-				    if( randomProb() < sBrgs ){
+				    if( randomProb(!seedSpecified) < sBrgs ){
 					deamPos.push_back(i+1);
 					seq[i] = 'T';
 					deaminated=true;
@@ -1388,7 +1408,7 @@ int main (int argc, char *argv[]) {
 				    cerr<<"3p"<<endl;
 #endif
 				    if(seq[i] == 'G'){
-					if( randomProb() < sBrgs ){
+					if( randomProb(!seedSpecified) < sBrgs ){
 					    deamPos.push_back(i+1);
 					    seq[i] = 'A';
 					    deaminated=true;
@@ -1399,7 +1419,7 @@ int main (int argc, char *argv[]) {
 				    cerr<<"dd"<<endl;
 #endif
 				    if(seq[i] == 'C'){
-					if( randomProb() < dBrgs ){
+					if( randomProb(!seedSpecified) < dBrgs ){
 					    deamPos.push_back(i+1);
 					    seq[i] = 'T';
 					    deaminated=true;
@@ -1513,7 +1533,7 @@ int main (int argc, char *argv[]) {
 			 
 
 			 
-				double p = randomProb();
+				double p = randomProb(!seedSpecified);
 				//bool f=false;
 				for(int a=0;a<4;a++){
 				    if( (sumProb[a]    <= p ) 
@@ -1577,7 +1597,7 @@ int main (int argc, char *argv[]) {
 
 
 			 
-				double p = randomProb();
+				double p = randomProb(!seedSpecified);
 				//bool f=false;
 				for(int a=0;a<4;a++){
 				    if( (sumProb[a]    <= p ) 
@@ -1654,7 +1674,7 @@ int main (int argc, char *argv[]) {
 			 
 
 			 
-				double p = randomProb();
+				double p = randomProb(!seedSpecified);
 				//bool f=false;
 				for(int a=0;a<4;a++){
 				    if( (sumProb[a]    <= p ) 
@@ -1718,7 +1738,7 @@ int main (int argc, char *argv[]) {
 
 
 			 
-				double p = randomProb();
+				double p = randomProb(!seedSpecified);
 				//bool f=false;
 				for(int a=0;a<4;a++){
 				    if( (sumProb[a]    <= p ) 
@@ -1755,7 +1775,7 @@ int main (int argc, char *argv[]) {
 			    i<int(seq.size());
 			    i++){
 			    if(seq[i] == 'C'){
-				if( randomProb() < sub5p[i].s[5] ){
+				if( randomProb(!seedSpecified) < sub5p[i].s[5] ){
 				    deamPos.push_back(i+1);
 				    seq[i] = 'T';
 				    deaminated=true;
@@ -1768,7 +1788,7 @@ int main (int argc, char *argv[]) {
 			    i<int(seq.size());
 			    i++){
 			    if(seq[i] == 'C'){
-				if( randomProb() < sub3p[ int(seq.size())-i-1 ].s[5] ){		
+				if( randomProb(!seedSpecified) < sub3p[ int(seq.size())-i-1 ].s[5] ){		
 				    deamPos.push_back( -(int(seq.size())-i));
 				    seq[i] = 'T';
 				    deaminated=true;
@@ -1787,7 +1807,7 @@ int main (int argc, char *argv[]) {
 			    i<int(seq.size());
 			    i++){
 			    if(seq[i] == 'C'){
-				if( randomProb() < sub5p[i].s[5] ){
+				if( randomProb(!seedSpecified) < sub5p[i].s[5] ){
 				    deamPos.push_back(i+1);
 				    seq[i] = 'T';
 				    deaminated=true;
@@ -1800,7 +1820,7 @@ int main (int argc, char *argv[]) {
 			    i<int(seq.size());
 			    i++){
 			    if(seq[i] == 'G'){
-				if( randomProb() < sub3p[ int(seq.size())-i-1 ].s[6] ){			
+				if( randomProb(!seedSpecified) < sub3p[ int(seq.size())-i-1 ].s[6] ){			
 				    deamPos.push_back( -(int(seq.size())-i));
 				    seq[i] = 'A';
 				    deaminated=true;
