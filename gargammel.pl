@@ -1026,7 +1026,6 @@ if ($compE>0) {			#if we have endogenous material
     if(!$foundC0){
       die "Directories ".$arrayofdirs[2]." does not correspond to the pattern CX where X is 0...N, must start with C0\n";
     }
-
     $multiCellModeMAX=$foundCMAX;
 
     for(my $cendoI=0;$cendoI<=$foundCMAX;$cendoI++){
@@ -1075,6 +1074,7 @@ if ($compE>0) {			#if we have endogenous material
     #
     #  SINGLE CELL MODE
     #
+    print STDERR  "Did not find multiple directories for the different cells therefore using ".($multiCellModeMAX+1)." cell\n";
 
     if ( ($#arrayofFilesendo+1) == 1) {
       $diploidMode=0;
@@ -1441,7 +1441,7 @@ if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
   my $firstCmdFrag=1;
   if ($multiCellMode) {
   }else{
-    $multiCellModeMAX=1;
+    $multiCellModeMAX=0;
   }
 
   for(my $i=0;$i<=$multiCellModeMAX;$i++) {
