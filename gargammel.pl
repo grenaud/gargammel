@@ -578,19 +578,19 @@ if ($ss eq "GA2") {		#- GenomeAnalyzer II (50bp, 75bp)
 
 if( (defined $misince) ){
   if( !(-e $misince)){
-    die "Endogenous misincorporation file does not exists\n";
+    die "Endogenous misincorporation file does not exist\n";
   }
 }
 
 if( (defined $misincc) ){
   if( !(-e $misincc)){
-    die "Contaminant misincorporation file does not exists\n";
+    die "Contaminant misincorporation file does not exist\n";
   }
 }
 
 if( (defined $misincb) ){
   if( !(-e $misincb)){
-    die "Bacterial misincorporation file does not exists\n";
+    die "Bacterial misincorporation file does not exist\n";
   }
 }
 
@@ -789,6 +789,7 @@ if( !(defined $outputprefix) ){
 }else{
 }
 
+=comment
 
 my @arrayofdirs=listdir($dirWithChr);
 
@@ -811,10 +812,26 @@ if($arrayofdirs[0] ne $dirWithChr."bact/" ||
 ";
 }
 
-my @arrayofFilesbact = listdirFa(   $arrayofdirs[0] );
-my @arrayofFilescont = listdirFa(   $arrayofdirs[1] );
-my @arrayofFilesendo = listdirFa(   $arrayofdirs[2] );
-my @arrayofCdirsendo = listdirCdir( $arrayofdirs[2] );
+=cut
+
+my $bactdir = $dirWithChr."bact/";
+my $contdir = $dirWithChr."cont/";
+my $endodir = $dirWithChr."endo/";
+
+if( !(-d $bactdir) || !(-d $contdir) || !(-d $endodir)) {
+  die "The input directory must contain 3 directories named:
+ bact/
+ endo/
+ cont/
+";
+}
+
+
+my @arrayofFilesbact = listdirFa(   $bactdir );
+my @arrayofFilescont = listdirFa(   $contdir );
+my @arrayofFilesendo = listdirFa(   $endodir );
+my @arrayofCdirsendo = listdirCdir( $endodir );
+
 
 my $sumB=0;
 my $sumC=0;
@@ -836,8 +853,8 @@ if($compB>0){
     die "If you want bacterial contamination, please have at least one file in the bact/ directory\n";
   }
 
-  if( !( -e $arrayofdirs[0]."/list" ) ){
-    die "List file ".$arrayofdirs[0]."/list does not exist, this file must contain the list of files and their weight ex:
+  if( !( -e $bactdir."/list" ) ){
+    die "List file ".$bactdir."/list does not exist, this file must contain the list of files and their weight ex:
 file1.fa\t0.3
 file2.fa\t0.2
 file3.fa\t0.15
@@ -848,25 +865,25 @@ file7.fa\t0.5
 \n";
   }else{
     my $sumWeight=0;
-    open(FILE,$arrayofdirs[0]."/list");
+    open(FILE,$bactdir."/list");
     while(my $line = <FILE>){
       if($line =~ /^(\S+)\s+(\S+)$/){
 
 	if(!looks_like_number($2)){
-	  die "Cannot parse line from bacterial list: ".$arrayofdirs[0]."/list must be:\nfile\tweight(between 0 and 1)\nfound line:".$line;
+	  die "Cannot parse line from bacterial list: ".$bactdir."/list must be:\nfile\tweight(between 0 and 1)\nfound line:".$line;
 	}
 	push(@arrayofFilesbactLFromList, $1);
 	push(@arrayofFilesbactLFromListB, 0);
 	push(@arrayofFilesbactLFromListW,$2);
 	$sumWeight+=$2;
       }else{
-	die "Cannot parse line from bacterial list: ".$arrayofdirs[0]."/list line:".$line;
+	die "Cannot parse line from bacterial list: ".$bactdir."/list line:".$line;
       }
     }
     close(FILE);
 
     if($sumWeight<0.99 || $sumWeight>1.01 ){
-      die "Problem from bacterial list: ".$arrayofdirs[0]."/list sum is not 1, found: ".$sumWeight;
+      die "Problem from bacterial list: ".$bactdir."/list sum is not 1, found: ".$sumWeight;
     }
 
   }
@@ -899,9 +916,9 @@ foreach my $fafile (@arrayofFilesbact){
   close(FILE);
 
   for(my $i=0;$i<=$#arrayofFilesbactLFromList;$i++){
-    print $arrayofdirs[0].$arrayofFilesbactLFromList[$i]."\n";
+    print $bactdir.$arrayofFilesbactLFromList[$i]."\n";
     print $fafile."\n";
-    if($arrayofdirs[0].$arrayofFilesbactLFromList[$i] eq $fafile){
+    if($bactdir.$arrayofFilesbactLFromList[$i] eq $fafile){
       if($arrayofFilesbactLFromListB[$i] == 1){
 	die "Fasta  ".$fafile." was found twice in the list";
       }
@@ -990,8 +1007,8 @@ my @arrayOfEndoCellFasta;
 
 if ($compE>0) {			#if we have endogenous material
 
-  #my @arrayofFilesendo = listdirFa(   $arrayofdirs[2] );
-  #my @arrayofCdirsendo = listdirCdir( $arrayofdirs[2] );
+  #my @arrayofFilesendo = listdirFa(   $endodir );
+  #my @arrayofCdirsendo = listdirCdir( $endodir );
   my $cell0Dir;
 
   #
@@ -1000,7 +1017,7 @@ if ($compE>0) {			#if we have endogenous material
   if ( ($#arrayofCdirsendo) >= 0 ) {
     $multiCellMode = 1;
     if ( $#arrayofFilesendo != -1) {
-      die "The endogenous directory ".$arrayofdirs[2]." must directories called CX where X is 0...N without any other fasta files, found: ".($#arrayofFilesendo+1)." fasta files\n";
+      die "The endogenous directory ".$endodir." must directories called CX where X is 0...N without any other fasta files, found: ".($#arrayofFilesendo+1)." fasta files\n";
     }
 
 
@@ -1014,7 +1031,7 @@ if ($compE>0) {			#if we have endogenous material
 	  $foundCMAX = $1;
 	}
       }else{
-	die "Directories ".$arrayofdirs[2]." does not correspond to the pattern CX where X is 0...N, found: $dirCendo\n";
+	die "Directories ".$endodir." does not correspond to the pattern CX where X is 0...N, found: $dirCendo\n";
       }
 
       if($dirCendo =~ /C0$/){
@@ -1024,42 +1041,42 @@ if ($compE>0) {			#if we have endogenous material
     }
 
     if(!$foundC0){
-      die "Directories ".$arrayofdirs[2]." does not correspond to the pattern CX where X is 0...N, must start with C0\n";
+      die "Directories ".$endodir." does not correspond to the pattern CX where X is 0...N, must start with C0\n";
     }
     $multiCellModeMAX=$foundCMAX;
 
     for(my $cendoI=0;$cendoI<=$foundCMAX;$cendoI++){
-      if( grep { $_ eq $arrayofdirs[2]."C".$cendoI."" } @arrayofCdirsendo ){
+      if( grep { $_ eq $endodir."C".$cendoI."" } @arrayofCdirsendo ){
 	#fine
       }else{
-	die "Missing directory ".$arrayofdirs[2]."C".$cendoI."\n";
+	die "Missing directory ".$endodir."C".$cendoI."\n";
       }
 
-      my @arrayofFilesendoCell = listdirFa(  $arrayofdirs[2]."C".$cendoI."/");
+      my @arrayofFilesendoCell = listdirFa(  $endodir."C".$cendoI."/");
       $arrayOfEndoCellFasta[ $cendoI ] = \@arrayofFilesendoCell;
 
       if ($cendoI == 0 ) {
 	@arrayofFilesendo = @arrayofFilesendoCell;
-	$cell0Dir = $arrayofdirs[2]."C".$cendoI."/";
+	$cell0Dir = $endodir."C".$cendoI."/";
 	if ( ($#arrayofFilesendoCell+1) == 1) {
 	  $diploidMode=0;
 	} else {
 	  if ( ($#arrayofFilesendoCell+1) == 2) {
 	    $diploidMode=1;
 	  } else {
-	    die "The endogenous directory must have 1 (haploid) or 2 (diploid) files, directory in question: ".($arrayofdirs[2]."C".$cendoI).", found ".($#arrayofFilesendoCell+1)."\n";
+	    die "The endogenous directory must have 1 (haploid) or 2 (diploid) files, directory in question: ".($endodir."C".$cendoI).", found ".($#arrayofFilesendoCell+1)."\n";
 	  }
 	}
       }else{
 	if($diploidMode == 0 ){
 	  if ( ($#arrayofFilesendoCell+1) != 1) {
-	    die "The endogenous directory must have all have 1 (haploid) or 2 (diploid) files, directory in question: ".($arrayofdirs[2]."C".$cendoI).", found: ".($#arrayofFilesendoCell+1)."\n";
+	    die "The endogenous directory must have all have 1 (haploid) or 2 (diploid) files, directory in question: ".($endodir."C".$cendoI).", found: ".($#arrayofFilesendoCell+1)."\n";
 	  }
 	}
 
 	if($diploidMode == 1 ){
 	  if ( ($#arrayofFilesendoCell+1) != 2) {
-	    die "The endogenous directory must have all have 1 (haploid) or 2 (diploid) files, directory in question: ".($arrayofdirs[2]."C".$cendoI).", found: ".($#arrayofFilesendoCell+1)."\n";
+	    die "The endogenous directory must have all have 1 (haploid) or 2 (diploid) files, directory in question: ".($endodir."C".$cendoI).", found: ".($#arrayofFilesendoCell+1)."\n";
 	  }
 	}
 
@@ -1114,7 +1131,7 @@ if ($compE>0) {			#if we have endogenous material
   if($multiCellMode){
     @arrayofFilesendofai = listdirFai( $cell0Dir );
   }else{
-    @arrayofFilesendofai = listdirFai( $arrayofdirs[2] );
+    @arrayofFilesendofai = listdirFai( $endodir );
   }
 
   if ($diploidMode) {
@@ -1382,7 +1399,7 @@ if($multiCellMode){
     }
 
 
-    print STDERR "Will extract ".sprintf("%".$digE."d",$arrayFragForEachCell[$i])." from cell: ".$arrayofdirs[2]."C".$i."/\t(".sprintf("% .2f",100*$arrayFragForEachCell[$i]/$numberOfFragmentsE)."%) "."\tendogenous fragments\n";
+    print STDERR "Will extract ".sprintf("%".$digE."d",$arrayFragForEachCell[$i])." from cell: ".$endodir."C".$i."/\t(".sprintf("% .2f",100*$arrayFragForEachCell[$i]/$numberOfFragmentsE)."%) "."\tendogenous fragments\n";
   }
   #die;
 } else {
