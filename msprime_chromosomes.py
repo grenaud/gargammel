@@ -37,83 +37,45 @@ split = int(args.split[0])
 #####################################
 
 # Simulate mass migration with the given split argument
-pop_configs = [
-	msprime.PopulationConfiguration(initial_size=1e4),
-	msprime.PopulationConfiguration(initial_size=1e4)
-]
+demo = msprime.Demography()
+demo.add_population(initial_size=1e4, name="ancient")
+demo.add_population(initial_size=1e4, name="modern")
 
-dem_events = [
-	msprime.MassMigration(time=split, source=0, destination=1, proportion=1.0)
-]
+demo.add_mass_migration(time=split, source="modern", dest="ancient", proportion=1.0)
 
 # Create sample list
 samples = []
 
-for _ in range(contamination_individuals + present_individuals):
-        samples.append(msprime.Sample(0, 0))
-        samples.append(msprime.Sample(0, 0))
-
-# If there was a population split, we'll use 2 different populations
-if(split > 0):
-	ancient_pop = 1
+if split > 0:
+    samples.append(msprime.SampleSet(contamination_individuals + present_individuals, "modern", time=0))
 else:
-	ancient_pop = 0
-
-for _ in range(ancient_individuals):
-	samples.append(msprime.Sample(ancient_pop, gens))
-	samples.append(msprime.Sample(ancient_pop, gens))
+    samples.append(msprime.SampleSet(contamination_individuals + present_individuals, "ancient", time=0))
+    
+samples.append(msprime.SampleSet(ancient_individuals, "ancient", time=gens))
 
 # Run simulation and extract results
-if(split > 1):
-	tree_seq = msprime.simulate(
-		samples=samples, recombination_rate=2e-8,
-        	mutation_rate=2e-8, length=num_bases,
-		population_configurations=pop_configs,
-		demographic_events=dem_events)
-else:
-	tree_seq = msprime.simulate(
-		samples=samples, recombination_rate=2e-8,
-        	mutation_rate=2e-8, length=num_bases, Ne=1e4)
+
+tree_seq = msprime.sim_ancestry(samples=samples, demography=demo,
+    	                        sequence_length=num_bases, recombination_rate=2e-8)
 
 ############################################
 # Transform data for seq-gen compatibility #
 ############################################
 
-tree_filepath = 'tree_data'
-tree_seq.dump(tree_filepath)
-
 # Get Newick format tree and partitions
 newick_filepath = 'newick_tree'
-newick_file = open(newick_filepath, 'w')
-subprocess.run(['msp', 'newick', '--precision', '14', tree_filepath], stdout=newick_file)
-newick_file.close()
 
 # Get each tree's interval, this needs to be appended to the beginning
 # of each Newick tree described in the file. Intervals are used by seq-gen
 # to merge the multiple trees that result from recombination
-intervals = []
-for tree in tree_seq.trees():
-    length = tree.get_length()
-    intervals.append(int(length))
-
-# Fix rounding error
-diff = num_bases - sum(intervals)
-
-if diff != 0:
-    intervals[len(intervals) - 1] += diff
 
 # Get number of partitions and add intervals
-partitions = 0
-added_intervals = []
-with open(newick_filepath, 'r') as newick_file:
-    
-    for line, interval in zip(newick_file, intervals):
-        added_intervals.append('[' + str(interval) + '] ' + line)
-        partitions += 1
+partitions = tree_seq.num_trees
 
-# Overwrite Newick file with added intervals
 with open(newick_filepath, 'w') as newick_file:
-    newick_file.writelines(added_intervals)
+    for tree in tree_seq.trees():
+        length = str(int(tree.get_length()))
+        newick_file.write('[' + length + '] ' + tree.newick() + "\n")
 
 ##############################
 # Run seq-gen on Newick tree #
@@ -129,31 +91,20 @@ else:
 
 seqgen_filepath = 'sequence_data'
 
+# Simulate sequences given ancestry trees
+
 with open(seqgen_filepath, 'w') as seqgen_file:
     subprocess.run(['seq-gen', '-mHKY', '-l' + str(num_bases),
         '-s' + str(branch_scale), '-p', str(partitions),
         newick_filepath], stdout=seqgen_file)
 
-# Sort sequences, msprime does not output chromosomes in order.
-# We will also remove the header, since this sequence file will be split
-# into several files representing our individuals
-
-# Small auxiliary function for sorting with key
-def get_key(s):
-    return int(s.split()[0])
-
-chr_sequences = []
 with open(seqgen_filepath, 'r') as seqgen_file:
     chr_sequences = seqgen_file.readlines()
 
-# Remove header and sort
-chr_sequences.pop(0)
-chr_sequences.sort(key=get_key)
+# Remove header and create {id => sequence} dictionary
 
-# Write only sequence to file
-with open(seqgen_filepath, 'w') as seqgen_file:
-    for line in chr_sequences:
-        seqgen_file.write(line.split()[1] + '\n')
+chr_sequences.pop(0)
+chr_dict = dict((int(chr_seq.split()[0]), chr_seq.split()[1]) for chr_seq in chr_sequences)
 
 ##############################################
 # Split seq-gen output into individual files #
@@ -173,11 +124,7 @@ if os.path.exists(anc_dir):
 os.makedirs(con_dir)
 os.makedirs(anc_dir)
 
-# Split individuals
-with open(seqgen_filepath, 'r') as seqgen_file:
-    chr_sequences = seqgen_file.readlines()
-
-chr_index = 0
+chr_index = 1
     
 #####################
 # Split contaminant #
@@ -196,7 +143,7 @@ for _ in range(contamination_individuals):
             # Write header
             f.write('>cont_1\n')
             # Write sequence
-            f.write(chr_sequences[chr_index])
+            f.write(chr_dict[chr_index])
 
         chr_index += 1
 
@@ -217,7 +164,7 @@ for _ in range(present_individuals):
             # Write header
             f.write('>reference_1\n')
             # Write sequence
-            f.write(chr_sequences[chr_index])
+            f.write(chr_dict[chr_index])
 
         chr_index += 1
 
@@ -238,7 +185,7 @@ for _ in range(ancient_individuals):
             # Write header
             f.write('>ancient_1\n')
             # Write sequence
-            f.write(chr_sequences[chr_index])
+            f.write(chr_dict[chr_index])
 
         chr_index += 1
 
@@ -322,8 +269,6 @@ with open(seg_path, 'w') as f:
 # Remove Newick, HDF5, and Seq-Gen files
 if os.path.exists(newick_filepath):
     os.remove(newick_filepath)
-if os.path.exists(tree_filepath):
-    os.remove(tree_filepath)
 if os.path.exists(seqgen_filepath):
     os.remove(seqgen_filepath)
 
