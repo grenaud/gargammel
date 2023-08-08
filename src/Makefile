@@ -5,7 +5,7 @@ LIBGAB= $(realpath ../libgab/)
 
 CXXFLAGS +=  -std=c++0x -Wall -lm -O3 -lz -I${LIBGAB} -I${LIBGAB}/gzstream/ -I${BAMTOOLS}/src/  -c
 #CXXFLAGS +=  -static -std=c++0x -Wall -lm -O3 -lz -I${LIBGAB} -I${LIBGAB}/gzstream/ -I${BAMTOOLS}/src/  -c
-LDFLAGS  += ${LIBGAB}/FastQObj.o  ${LIBGAB}/FastQParser.o ${LIBGAB}/PutProgramInHeader.o ${BAMTOOLS}/build/src/api/libbamtools.a  ${LIBGAB}/libgab.a ${LIBGAB}/gzstream/libgzstream.a -lm -lz
+LDFLAGS  += ${LIBGAB}/FastQObj.o  ${LIBGAB}/FastQParser.o ${LIBGAB}/PutProgramInHeader.o ${BAMTOOLS}/build/src/libbamtools.a  ${LIBGAB}/libgab.a ${LIBGAB}/gzstream/libgzstream.a -lm -lz
 
 
 all: fragSim deamSim adptSim fasta2fastas damage_patterns2prof mapDamage2prof
