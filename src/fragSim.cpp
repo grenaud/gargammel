@@ -480,7 +480,6 @@ int main (int argc, char *argv[]) {
 
 	if(string(argv[i]) == "-uniq" ){
 	    uniqTags = true;
-	    i++; 
 	    continue;
 	}
 
