@@ -846,6 +846,9 @@ my @arrayofFilesbactLFromList;
 my @arrayofFilesbactLFromListW;
 my @arrayofFilesbactLFromListB;
 my @arrayofFilesbactLFromListP;
+#maps an index in the bact/list arrays to the index of the same fasta in @arrayofFilesbact
+#the former follows the order of the lines in bact/list, the latter the order of readdir()
+my @arrayofFilesbactLFromListIdx;
 
 if($compB>0){
 
@@ -890,6 +893,8 @@ file7.fa\t0.5
 
 }
 
+my $indexOfFafile=0;
+
 foreach my $fafile (@arrayofFilesbact){
   print STDERR "Found bacterial contaminant file ".$fafile."\n";
 
@@ -922,7 +927,8 @@ foreach my $fafile (@arrayofFilesbact){
       if($arrayofFilesbactLFromListB[$i] == 1){
 	die "Fasta  ".$fafile." was found twice in the list";
       }
-      $arrayofFilesbactLFromListB[$i] = 1;
+      $arrayofFilesbactLFromListB[$i]   = 1;
+      $arrayofFilesbactLFromListIdx[$i] = $indexOfFafile;
     }
   }
 
@@ -930,6 +936,7 @@ foreach my $fafile (@arrayofFilesbact){
   push(@arrayofFilesbactL, $sumForFile);
   push(@arrayofFilesbactSL,$sumB);
   push(@arrayofFilesbactToExtract,0);
+  $indexOfFafile++;
 }
 
 
@@ -1340,7 +1347,8 @@ if (0) {
       }
 
       if ($indexFound != -1) {
-	$arrayofFilesbactToExtract[$indexFound]++;
+	#$indexFound indexes bact/list, @arrayofFilesbactToExtract indexes @arrayofFilesbact
+	$arrayofFilesbactToExtract[ $arrayofFilesbactLFromListIdx[$indexFound] ]++;
       } else {
 	$i--;			#restart iteration
 	#die;
