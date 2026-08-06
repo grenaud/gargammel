@@ -67,6 +67,25 @@ In the main directory, simply type
 
 This should install bamtools (C++ library to read/write BAM files) and ART (Illumina read simulator).
 
+Tests:
+-------------------------------------------------------------------------------------
+
+To check that the individual subcomponents behave as expected, type
+
+  make test
+
+This runs fragSim, deamSim, adptSim, fasta2fastas, mapDamage2prof and
+damage_patterns2prof on small synthetic inputs, then runs gargammel.pl itself,
+and verifies the output of each. It takes about a minute, writes everything to
+a temporary directory and needs no data beyond what is in this repository.
+
+To run a single group of tests, or to keep the temporary directory around to
+look at what was produced:
+
+  make test TESTARGS="--only fragSim"
+  bash tests/run_tests.sh --list
+  bash tests/run_tests.sh --only 'deamSim|adptSim' --keep
+
 Overview:
 -------------------------------------------------------------------------------------
 

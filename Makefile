@@ -57,5 +57,12 @@ clean:
 	make -C libgab clean
 	make -C src clean
 
+# Runs each subcomponent on small synthetic inputs and checks its output.
+# TESTARGS is handed to the test script, e.g.
+#	make test TESTARGS="--only fragSim"
+#	make test TESTARGS=--list
+test: all
+	bash tests/run_tests.sh $(TESTARGS)
 
-.PHONY: all
+
+.PHONY: all test
