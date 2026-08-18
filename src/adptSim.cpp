@@ -50,6 +50,12 @@ int main (int argc, char *argv[]) {
     bool     tagb             =false;
     string   tag              = "";
 
+    // Fragments shorter than the desired read length are padded with random
+    // bases; without a seed that padding differs between otherwise identical
+    // runs, which is enough to make the whole pipeline irreproducible.
+    bool seedSpecified          =false;
+    unsigned int seed           =0;
+
     const string usage=string("\t"+string(argv[0])+
                               " [options]  [BAM/fasta file]"+"\n\n"+
 			      " This program reads a fasta file containing aDNA fragments and\n"+
@@ -60,9 +66,11 @@ int main (int argc, char *argv[]) {
 			      "\n\tOptions:\n"+ 
 			      "\n\t\tI/O options:\n"+ 
 			      
-			      "\t\t"+"-arts\t[out]" +"\t\t"+"Output single-end reads as ART (unzipped fasta) (Default: "+outArt+")"+"\n"+
-			      "\t\t"+"-artp\t[out]" +"\t\t"+"Output reads as ART (unzipped fasta) (Default: "+outArt+")"+"\n"+
+			      "\t\t"+"-arts\t[out]" +"\t\t"+"Output single-end reads as ART (fasta) (Default: "+outArt+")"+"\n"+
+			      "\t\t"+"-artp\t[out]" +"\t\t"+"Output reads as ART (fasta) (Default: "+outArt+")"+"\n"+
 			      "\t\t"+""            +"\t\t\t"+"with wrap-around for paired-end mode"+"\n"+
+			      "\t\t"+""            +"\t\t\t"+"a name ending in .gz is written gzipped, which the"+"\n"+
+			      "\t\t"+""            +"\t\t\t"+"art_illumina shipped with gargammel reads directly"+"\n"+
 		
 			      "\t\t"+"-fr\t[out fwdr]" +"\t"+"Output forward read as zipped fasta (Default: "+outFastagzfwd+")"+"\n"+
 			      "\t\t"+"-rr\t[out rwdr]" +"\t"+"Output reverse read as zipped fasta (Default: "+outFastagzrev+")"+"\n"+
@@ -76,6 +84,7 @@ int main (int argc, char *argv[]) {
                               "\t"+"-l\t[length]" +"\t\t"+"Desired read length  (Default:  "+stringify(desiredLength)+")"+"\n"+
 			      "\t"+"-name" +"\t\t\t\t"+"Append BAM tags or to deflines if adapters are added (Default:  "+booleanAsString(tagb)+")"+"\n"+
 			      "\t"+"-tag\t" +"[tag]\t\t\t"+"Append this string to deflines or BAM tags (Default:  "+booleanAsString(tagb)+")"+"\n"+
+			      "\t"+"--seed\t" +"[int]\t\t\t"+"Use [seed] as seed for the random number generator (default random seed each execution)"+"\n"+
 
                               "");
 
@@ -172,8 +181,23 @@ int main (int argc, char *argv[]) {
 	    continue;
 	}
 
+	if(string(argv[i]) == "--seed" ){
+	    seed=destringify<unsigned int>(argv[i+1]);
+	    i++;
+	    seedSpecified=true;
+	    continue;
+	}
+
         cerr<<"Error: unknown option "<<string(argv[i])<<endl;
         return 1;
+    }
+
+    //If the user has specified the seed, use it; otherwise libgab seeds
+    //randomDNASeq() from the wall clock on first use.
+    if(seedSpecified){
+	srand(   seed );
+	srand48( seed );
+	srandCalled=true;
     }
 
     if(outFastagzb && outFastagzfwd.empty()){
@@ -204,7 +228,13 @@ int main (int argc, char *argv[]) {
     ogzstream outFastaFgzfp;
     ogzstream outFastaRgzfp;
 
+    //The ART output goes either to a plain or to a gzipped stream depending on
+    //the name it was given; ogzstream and ofstream are both ostreams, so the
+    //writing code below only ever sees outARTstream.
     ofstream   outARTfp;
+    ogzstream  outARTgzfp;
+    ostream *  outARTstream     = &outARTfp;
+    bool       outArtGz         = strEndsWith(outArt,".gz");
 
 
     //BAM
@@ -251,9 +281,15 @@ int main (int argc, char *argv[]) {
 	    outFastaRgzfp.open(outFastagzrev.c_str(), ios::out);
 	    if(!outFastaRgzfp.good()){       cerr<<"Cannot write to file "<<outFastagzrev<<endl; return 1; }
 	}else{
-	    if( outArtb){	    		
-		outARTfp.open(outArt.c_str(), ios::out);
-		if(!outARTfp.good()){ cerr<<"Cannot write to file "<<outArt<<endl; return 1; }		    
+	    if( outArtb){
+		if(outArtGz){
+		    outARTgzfp.open(outArt.c_str(), ios::out);
+		    if(!outARTgzfp.good()){ cerr<<"Cannot write to file "<<outArt<<endl; return 1; }
+		    outARTstream = &outARTgzfp;
+		}else{
+		    outARTfp.open(outArt.c_str(), ios::out);
+		    if(!outARTfp.good()){ cerr<<"Cannot write to file "<<outArt<<endl; return 1; }
+		}
 	    }
 	    //nothing
 	}
@@ -399,10 +435,10 @@ int main (int argc, char *argv[]) {
 	    }else{
 		if(outArtb){
 		    if(outArts)
-			outARTfp<<namef<<endl<<seqf<<endl;
+			(*outARTstream)<<namef<<endl<<seqf<<endl;
 		    if(outArtp){
 			seqr  = reverseComplement(seqr);
-			outARTfp<<namef<<endl<<seqf<<seqr<<endl;
+			(*outARTstream)<<namef<<endl<<seqf<<seqr<<endl;
 		    }
 		}else{
 		    cout<<namef<<endl<<seqf<<endl<<namer<<endl<<seqr<<endl;
@@ -430,8 +466,11 @@ int main (int argc, char *argv[]) {
         writer.Close();
     }
 
-    if( outArtb){	    
-	outARTfp.close();
+    if( outArtb){
+	if(outArtGz)
+	    outARTgzfp.close();
+	else
+	    outARTfp.close();
     }
 
     cerr<<"Program "<<argv[0]<<" terminated succesfully, wrote "<<f<<" sequences"<<endl;

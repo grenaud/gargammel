@@ -24,7 +24,7 @@ TESTDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 GARGDIR="$( dirname "$TESTDIR" )"
 SRCDIR="$GARGDIR/src"
 
-TESTGROUPS="usage fasta2fastas fragSim deamSim adptSim mapDamage2prof damage_patterns2prof pipeline gargammel"
+TESTGROUPS="usage fasta2fastas fragSim deamSim adptSim mapDamage2prof damage_patterns2prof art pipeline gargammel"
 
 ONLY=""
 KEEP=""
@@ -507,6 +507,23 @@ greater() {
     else fail "$1" "expected $2 to be greater than $3"; fi
 }
 
+# close_to [description] [a] [b] [tol]  -- passes when |a-b| <= tol
+close_to() {
+    if awk -v a="$2" -v b="$3" -v t="$4" 'BEGIN{d=a-b; if(d<0)d=-d; exit !(d<=t)}'; then
+	pass "$1"
+    else
+	fail "$1" "expected $2 to be within $4 of $3"
+    fi
+}
+
+# the C>T rate at one position of the molecule, 1 based, over the reference Cs
+ct_rate_at() {
+    paste <(fa_seqs "$1") <(fa_seqs "$2") | awk -v p="$3" '{
+	a=toupper(substr($1,p,1)); b=toupper(substr($2,p,1));
+	if(a=="C"){ tot++; if(b=="T") d++ }
+    } END{ printf "%.4f\n", (tot?d/tot:0) }'
+}
+
 test_deamSim() {
     group "deamSim"
     local prog="$SRCDIR/deamSim"
@@ -580,6 +597,30 @@ test_deamSim() {
     mid=$(diff_rate_range "$W/frag60.fa" "$W/deam-rate-briggs.out" 25 36)
     greater "-damage puts more damage on the 5' end than in the middle" "$end5" "$mid"
     greater "-damage puts more damage on the 3' end than in the middle" "$end3" "$mid"
+
+    # --- the Briggs model reproduces the rates of the paper -------------
+    # Fed the maximum likelihood estimates of Briggs et al. 2007 (table 1), the
+    # model has to put 0.5*(1-l)*s = 0.218 of C>T on the 5' most base, plus a
+    # little of d for the half of the molecules whose 5' end was blunted. The
+    # 0.5 is there because an overhang is as likely to extend the 3' strand, in
+    # which case the blunt-end repair removes it. Dropping it doubles the rate,
+    # which is what -damagelegacy reproduces.
+    "$SRCDIR/fragSim" -n 20000 -l 60 --seed 37 "$REF" > "$W/frag60b.fa" 2>/dev/null
+    local briggsmle="0.024,0.36,0.0097,0.68" ctnew ctold
+    run deam-mle "$prog" -damage "$briggsmle" --seed 38 "$W/frag60b.fa"
+    ok "-damage runs with the estimates of Briggs et al." "$RC" "$(lasterr deam-mle)"
+    ctnew=$(ct_rate_at "$W/frag60b.fa" "$W/deam-mle.out" 1)
+    close_to "-damage matches the Briggs et al. 5' C>T rate" "$ctnew" 0.224 0.04
+
+    run deam-legacy "$prog" -damagelegacy "$briggsmle" --seed 38 "$W/frag60b.fa"
+    ok "-damagelegacy runs" "$RC" "$(lasterr deam-legacy)"
+    eq "-damagelegacy keeps every fragment" "$(fa_count "$W/frag60b.fa")" \
+       "$(fa_count "$W/deam-legacy.out")"
+    eq "-damagelegacy only deaminates" "" \
+       "$(subst_profile "$W/frag60b.fa" "$W/deam-legacy.out" | awk '$1!="C>T" && $1!="G>A"')"
+    ctold=$(ct_rate_at "$W/frag60b.fa" "$W/deam-legacy.out" 1)
+    close_to "-damagelegacy reproduces the old 5' C>T rate" "$ctold" 0.438 0.04
+    greater "-damagelegacy damages the 5' end more than -damage" "$ctold" "$ctnew"
 
     # a stronger single strand deamination probability must give more damage
     run deam-weak   "$prog" -damage 0.03,0.4,0.01,0.1 --seed 36 "$W/frag60.fa"
@@ -698,6 +739,18 @@ test_adptSim() {
        "$(paste <(fa_seqs "$W/frag35.fa") <(fa_seqs "$W/fwd3.fa.gz") \
 	  | awk '{ if(substr(toupper($1),1,20)!=$2) bad++ } END{print bad+0}')"
 
+    # --- --seed -----------------------------------------------------------
+    # a read length well above fragment+adapter forces the random padding,
+    # which is the only part of adptSim that draws random numbers
+    run adpt-seed1 "$prog" --seed 8080 -arts "$W/adpt_seed1.fa" -l 150 "$W/frag35.fa"
+    ok "--seed runs" "$RC" "$(lasterr adpt-seed1)"
+    run adpt-seed2 "$prog" --seed 8080 -arts "$W/adpt_seed2.fa" -l 150 "$W/frag35.fa"
+    eq "the same seed pads with the same bases" \
+       "$(md5sum < "$W/adpt_seed1.fa")" "$(md5sum < "$W/adpt_seed2.fa")"
+    run adpt-seed3 "$prog" --seed 9090 -arts "$W/adpt_seed3.fa" -l 150 "$W/frag35.fa"
+    ne "a different seed pads differently" \
+       "$(md5sum < "$W/adpt_seed1.fa")" "$(md5sum < "$W/adpt_seed3.fa")"
+
     # --- the ART flavours -------------------------------------------------
     run adpt-arts "$prog" -arts "$W/art_s.fa" -l 50 "$W/frag35.fa"
     ok "-arts writes single end ART input" "$RC" "$(lasterr adpt-arts)"
@@ -709,6 +762,24 @@ test_adptSim() {
     eq "-artp keeps every fragment" "$nin" "$(fa_count "$W/art_p.fa")"
     eq "-artp wraps the two mates into one record of twice the read length" "100," \
        "$(fa_lenset "$W/art_p.fa")"
+
+    # a .gz destination is compressed in place, which is how gargammel.pl hands
+    # the amplicons to the patched art without a separate gzip pass
+    run adpt-artpgz "$prog" -artp "$W/art_p.fa.gz" -l 50 --seed 71 "$W/frag35.fa"
+    ok "-artp accepts a .gz destination" "$RC" "$(lasterr adpt-artpgz)"
+    if is_gzip "$W/art_p.fa.gz"; then
+	pass "-artp writes a valid gzip stream to a .gz name"
+    else
+	fail "-artp writes a valid gzip stream to a .gz name" "not gzip"
+    fi
+    run adpt-artpplain "$prog" -artp "$W/art_p2.fa" -l 50 --seed 71 "$W/frag35.fa"
+    eq "the gzipped amplicons hold exactly what the plain ones do" \
+       "$(md5sum < "$W/art_p2.fa")" "$(gzip -cd "$W/art_p.fa.gz" | md5sum)"
+
+    run adpt-artsgz "$prog" -arts "$W/art_s.fa.gz" -l 50 "$W/frag35.fa"
+    ok "-arts accepts a .gz destination" "$RC" "$(lasterr adpt-artsgz)"
+    eq "-arts keeps every fragment when gzipped" "$nin" \
+       "$(gzip -cd "$W/art_s.fa.gz" | grep -c '^>')"
 
     # --- BAM --------------------------------------------------------------
     if [ -s "$W/frag.bam" ]; then
@@ -916,6 +987,143 @@ test_damage_patterns2prof() {
 }
 
 #####################################################################
+# art_illumina: the patched ART (see patches/art_illumina_gargammel.patch)
+#####################################################################
+
+test_art() {
+    group "art_illumina"
+    local prog="$GARGDIR/art_src_MountRainier/art_illumina"
+    [ -x "$prog" ] || { skip "art_illumina" "not built, run 'make'"; return; }
+
+    # amplicons the way adptSim hands them to art: fragment + adapter + fragment
+    local AMP="$W/art_amp.fa"
+    make_fasta "$W/art_src.fa" ampchr 30000 77
+    awk 'BEGIN{n=0} !/^>/{s=s $0} END{
+	for(i=1;i+150<=length(s) && n<300;i+=150){ n++; printf ">amp%d\n%s\n", n, substr(s,i,150) }
+    }' "$W/art_src.fa" > "$AMP"
+    gzip -cf "$AMP" > "$AMP.gz"
+
+    local A="-ss HS25 -amp -na -p -l 75 -c 1"
+
+    # --- reproducibility -------------------------------------------------
+    run art-s1 $prog $A -i "$AMP" -rs 4242 -o "$W/art_s1"
+    ok "a fixed seed run completes" "$RC" "$(lasterr art-s1)"
+    run art-s2 $prog $A -i "$AMP" -rs 4242 -o "$W/art_s2"
+    eq "the same seed gives the same first reads" \
+       "$(md5sum < "$W/art_s11.fq")" "$(md5sum < "$W/art_s21.fq")"
+    eq "the same seed gives the same second reads" \
+       "$(md5sum < "$W/art_s12.fq")" "$(md5sum < "$W/art_s22.fq")"
+    run art-s3 $prog $A -i "$AMP" -rs 777 -o "$W/art_s3"
+    ne "a different seed gives different reads" \
+       "$(md5sum < "$W/art_s11.fq")" "$(md5sum < "$W/art_s31.fq")"
+
+    local REFMD5_1 REFMD5_2
+    REFMD5_1=$(md5sum < "$W/art_s11.fq")
+    REFMD5_2=$(md5sum < "$W/art_s12.fq")
+
+    # --- gzip ------------------------------------------------------------
+    run art-gzin $prog $A -i "$AMP.gz" -rs 4242 -o "$W/art_gzin"
+    ok "a gzipped reference is read" "$RC" "$(lasterr art-gzin)"
+    eq "a gzipped reference gives the same reads" "$REFMD5_1" "$(md5sum < "$W/art_gzin1.fq")"
+
+    run art-gzout $prog $A -i "$AMP" -rs 4242 -gz -o "$W/art_gzout"
+    ok "-gz completes" "$RC" "$(lasterr art-gzout)"
+    if is_gzip "$W/art_gzout1.fq.gz"; then
+	pass "-gz writes a valid gzip stream"
+	eq "-gz holds the same reads" "$REFMD5_1" "$(gzip -cd "$W/art_gzout1.fq.gz" | md5sum)"
+    else
+	fail "-gz writes a valid gzip stream" "no $W/art_gzout1.fq.gz"
+    fi
+
+    run art-fqgz $prog $A -i "$AMP" -rs 4242 --fq1 "$W/art_x1.fq.gz" --fq2 "$W/art_x2.fq.gz"
+    if is_gzip "$W/art_x1.fq.gz"; then
+	pass "a .gz destination is compressed without -gz"
+    else
+	fail "a .gz destination is compressed without -gz" "$(lasterr art-fqgz)"
+    fi
+
+    # --- pipes -----------------------------------------------------------
+    cat "$AMP" | $prog $A -i - -rs 4242 -o "$W/art_stdin" >"$W/art-stdin.out" 2>"$W/art-stdin.err"
+    ok "the reference is read from stdin" "$?" "$(lasterr art-stdin)"
+    eq "reading from stdin gives the same reads" "$REFMD5_1" "$(md5sum < "$W/art_stdin1.fq")"
+
+    gzip -cd "$AMP.gz" | $prog $A -i /dev/stdin -rs 4242 -o "$W/art_devstdin" \
+	>/dev/null 2>"$W/art-devstdin.err"
+    eq "/dev/stdin works too" "$REFMD5_1" "$(md5sum < "$W/art_devstdin1.fq")"
+
+    eq "--fq1 - writes the first reads to stdout" "$REFMD5_1" \
+       "$($prog $A -i "$AMP" -rs 4242 --fq1 - --fq2 "$W/art_p2.fq" 2>/dev/null | md5sum)"
+    eq "the mate written alongside stdout is unchanged" "$REFMD5_2" \
+       "$(md5sum < "$W/art_p2.fq")"
+    eq "fd:N names a descriptor" "$REFMD5_1" \
+       "$($prog $A -i "$AMP" -rs 4242 --fq1 fd:1 --fq2 "$W/art_f2.fq" 2>/dev/null | md5sum)"
+
+    # the run summary must not end up in the read stream
+    eq "the summary stays off stdout when reads go there" "@" \
+       "$($prog $A -i "$AMP" -rs 4242 --fq1 - --fq2 "$W/art_b2.fq" 2>/dev/null | head -c 1)"
+
+    # a whole pipeline, nothing touching the disk in between
+    eq "gzipped stdin to gzipped stdout" "$REFMD5_1" \
+       "$(gzip -cd "$AMP.gz" | $prog $A -i - -rs 4242 --fq1 - --fq2 "$W/art_q2.fq" 2>/dev/null \
+	  | gzip | gzip -cd | md5sum)"
+
+    # --- single end ------------------------------------------------------
+    run art-se $prog -ss HS25 -amp -na -l 75 -c 1 -i "$AMP" -rs 4242 -o "$W/art_se"
+    ok "a single end amplicon run completes" "$RC" "$(lasterr art-se)"
+    eq "-o - sends single end reads to stdout" \
+       "$(md5sum < "$W/art_se.fq")" \
+       "$($prog -ss HS25 -amp -na -l 75 -c 1 -i "$AMP" -rs 4242 -o - 2>/dev/null | md5sum)"
+
+    # --- ALN/SAM still work ----------------------------------------------
+    run art-sam $prog -ss HS25 -i "$W/art_src.fa" -l 75 -f 1 -rs 4242 -sam -o "$W/art_sam"
+    ok "a SAM run completes" "$RC" "$(lasterr art-sam)"
+    if [ -s "$W/art_sam.sam" ] && [ -s "$W/art_sam.aln" ]; then
+	pass "SAM and ALN files are written"
+	eq "the SAM header lists the reference" 1 \
+	   "$(grep -c '^@SQ' "$W/art_sam.sam")"
+    else
+	fail "SAM and ALN files are written" "missing in $W"
+    fi
+    # reading from a pipe cannot produce @SQ lines, and that must be said
+    # rather than silently producing a headerless file
+    cat "$W/art_src.fa" | $prog -ss HS25 -i - -l 75 -f 1 -rs 4242 -sam -o "$W/art_pipesam" \
+	>"$W/art-pipesam.out" 2>"$W/art-pipesam.err"
+    if [ $? -ne 0 ] && grep -qi 'pipe' "$W/art-pipesam.err"; then
+	pass "a SAM run off a pipe is refused with a clear message"
+    else
+	fail "a SAM run off a pipe is refused with a clear message"
+    fi
+
+    # --- indels ----------------------------------------------------------
+    # The stock set_rate() built its table from P(X>i) starting at i=1, so
+    # placing one indel was gated on the probability of needing two and the
+    # realized rate came out ~250x below -ir/-dr. At the defaults roughly 1.5%
+    # of 75bp reads should carry one; before the fix it was 0.003%.
+    run art-indel $prog -ss HS25 -i "$W/art_src.fa" -l 75 -f 4 -rs 4242 -o "$W/art_indel"
+    ok "a run with default indel rates completes" "$RC" "$(lasterr art-indel)"
+    local ind
+    ind=$(awk '/^>/{ if(NR>1 && gap) n++; gap=0; t++; next }
+	       { if(index($0,"-")) gap=1 }
+	       END{ if(gap) n++; printf "%.3f", (t? n*100/t : 0) }' "$W/art_indel.aln")
+    if awk -v x="$ind" 'BEGIN{exit !(x>0.7 && x<2.5)}'; then
+	pass "indels appear at about the rate -ir/-dr ask for ($ind% of reads)"
+    else
+	fail "indels appear at about the rate -ir/-dr ask for" \
+	     "got $ind% of reads, expected ~1.5% (0.003% means the set_rate fix was lost)"
+    fi
+
+    # and zero rates must still mean zero, so that -ir/-dr 0 reproduces the
+    # substitution-only reads earlier versions produced
+    run art-noindel $prog -ss HS25 -i "$W/art_src.fa" -l 75 -f 4 -rs 4242 \
+	-ir 0 -dr 0 -ir2 0 -dr2 0 -o "$W/art_noind"
+    ok "indels can be switched off" "$RC" "$(lasterr art-noindel)"
+    # only the two sequence lines under each header may hold a gap; the header
+    # itself carries the strand, which is written as + or -
+    eq "-ir 0 -dr 0 puts no indel in any read" "0" \
+       "$(awk '/^>/{n=2;next} n>0{ if(index($0,"-")) g++; n-- } END{print g+0}' "$W/art_noind.aln")"
+}
+
+#####################################################################
 # pipeline: the three tools chained the way gargammel.pl chains them
 #####################################################################
 
@@ -1030,6 +1238,95 @@ test_gargammel() {
 	   "$(gzip -cd "$W/simse_s.fq.gz" | awk 'NR%4==2{print length($0)}' | sort -n -u | tr '\n' ',')"
     else
 	fail "single end reads are written" "no fastq in $W"
+    fi
+
+    # --- --seed: the whole pipeline reproducible from one number ----------
+    local SEEDARGS="--comp 0,0.1,0.9 -n 300 -l 40 -damage 0.03,0.4,0.01,0.3 -rl 60"
+    run garg-seed1 perl "$prog" $SEEDARGS --seed 31337 -o "$W/seed1" "$IN"
+    ok "--seed runs" "$RC" "$(lasterr garg-seed1)"
+    run garg-seed2 perl "$prog" $SEEDARGS --seed 31337 -o "$W/seed2" "$IN"
+    ok "a second run with the same seed runs" "$RC" "$(lasterr garg-seed2)"
+    if [ -s "$W/seed1_s1.fq.gz" ] && [ -s "$W/seed2_s1.fq.gz" ]; then
+	eq "the same seed reproduces the forward reads exactly" \
+	   "$(gzip -cd "$W/seed1_s1.fq.gz" | md5sum)" \
+	   "$(gzip -cd "$W/seed2_s1.fq.gz" | md5sum)"
+	eq "the same seed reproduces the reverse reads exactly" \
+	   "$(gzip -cd "$W/seed1_s2.fq.gz" | md5sum)" \
+	   "$(gzip -cd "$W/seed2_s2.fq.gz" | md5sum)"
+	run garg-seed3 perl "$prog" $SEEDARGS --seed 42424 -o "$W/seed3" "$IN"
+	ne "a different seed gives a different simulation" \
+	   "$(gzip -cd "$W/seed1_s1.fq.gz" | md5sum)" \
+	   "$(gzip -cd "$W/seed3_s1.fq.gz" | md5sum)"
+	# each sub-program must get its own seed, not one shared stream
+	local nseed nuniq
+	nseed=$(grep -o -- '--seed [0-9]*\|-rs [0-9]*' "$W/garg-seed1.err" | wc -l | tr -d ' ')
+	nuniq=$(grep -o -- '--seed [0-9]*\|-rs [0-9]*' "$W/garg-seed1.err" \
+		| awk '{print $2}' | sort -u | wc -l | tr -d ' ')
+	ne "the sub-programs are seeded at all" "0" "$nseed"
+	eq "every sub-program is given a distinct seed" "$nseed" "$nuniq"
+	# the wrapper's own draws must be seeded too, or it hands the
+	# sub-programs different workloads from one run to the next
+	eq "the wrapper itself is seeded" \
+	   "$(grep -o -- '-n [0-9]*' "$W/garg-seed1.err" | tr '\n' ' ')" \
+	   "$(grep -o -- '-n [0-9]*' "$W/garg-seed2.err" | tr '\n' ' ')"
+    else
+	fail "the same seed reproduces the forward reads exactly" "no fastq in $W"
+    fi
+
+    # the reads come out gzipped straight from art, with no separate gzip pass
+    if is_gzip "$W/seed1_s1.fq.gz"; then
+	pass "the reads are written as a valid gzip stream"
+    else
+	fail "the reads are written as a valid gzip stream"
+    fi
+    if grep -q 'gzip -f .*_s1\.fq' "$W/garg-seed1.err"; then
+	fail "no separate gzip pass over the reads" "gargammel still shells out to gzip"
+    else
+	pass "no separate gzip pass over the reads"
+    fi
+
+    # the amplicons go to art gzipped as well, written that way by adptSim
+    # rather than compressed afterwards
+    if is_gzip "$W/seed1_a.fa.gz"; then
+	pass "the amplicons are written as a valid gzip stream"
+    else
+	fail "the amplicons are written as a valid gzip stream" "no $W/seed1_a.fa.gz"
+    fi
+    if [ -e "$W/seed1_a.fa" ]; then
+	fail "the amplicons never exist uncompressed" "$W/seed1_a.fa is still there"
+    else
+	pass "the amplicons never exist uncompressed"
+    fi
+    if grep -q 'gzip -f .*_a\.fa' "$W/garg-seed1.err"; then
+	fail "no separate gzip pass over the amplicons" "gargammel still shells out to gzip"
+    else
+	pass "no separate gzip pass over the amplicons"
+    fi
+
+    # --- --noindel --------------------------------------------------------
+    # art simulates sequencing indels by default; --noindel zeroes the four
+    # rates, which is what gargammel produced before 1.1.5
+    run garg-noindel perl "$prog" $SEEDARGS --seed 31337 --noindel -o "$W/noind" "$IN"
+    ok "--noindel runs" "$RC" "$(lasterr garg-noindel)"
+    if grep -q -- '-ir 0 -dr 0 -ir2 0 -dr2 0' "$W/garg-noindel.err"; then
+	pass "--noindel zeroes the indel rates art is given"
+    else
+	fail "--noindel zeroes the indel rates art is given" "not in the art command"
+    fi
+    if grep -q -- '-ir 0' "$W/garg-seed1.err"; then
+	fail "indels are on unless --noindel is given" "gargammel zeroed them anyway"
+    else
+	pass "indels are on unless --noindel is given"
+    fi
+    # same seed, so the reads differ only by the indels art did or did not add
+    if [ -s "$W/noind_s1.fq.gz" ]; then
+	ne "--noindel changes the reads" \
+	   "$(gzip -cd "$W/seed1_s1.fq.gz" | md5sum)" \
+	   "$(gzip -cd "$W/noind_s1.fq.gz" | md5sum)"
+	eq "--noindel keeps every read at the requested length" "60," \
+	   "$(gzip -cd "$W/noind_s1.fq.gz" | awk 'NR%4==2{print length($0)}' | sort -u | tr '\n' ',')"
+    else
+	fail "--noindel changes the reads" "no fastq in $W"
     fi
 }
 

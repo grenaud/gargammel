@@ -1,0 +1,398 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.7cm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{hyperref}
+
+\title{The Briggs model in \texttt{deamSim}:\\ what was wrong and what the fix does}
+\author{}
+\date{}
+
+\newcommand{\Ol}{O_{5'}}
+
+\begin{document}
+\maketitle
+
+\noindent
+This note works through the two corrections made to the \texttt{-damage} option of
+\texttt{deamSim}. It is written so that every step can be checked by hand; the only
+probability facts used are the geometric distribution and independence.
+
+\section{Setting up}
+
+A fragment of length $L$. We follow one strand of the duplex, the one that will be
+sequenced, and number its bases $n = 1, 2, \dots, L$ starting from its own $5'$ end.
+
+Four parameters, as in Briggs et al.\ (2007):
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+$\lambda$   & geometric parameter of the overhang length \\
+$\delta_s$  & probability that a C in a single-stranded region is deaminated \\
+$\delta_d$  & probability that a C in a double-stranded region is deaminated \\
+$\nu$       & nick frequency per base \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+Their maximum likelihood estimates on the Neandertal data (their Table~1) are
+$\nu = 0.024$, $\lambda = 0.36$, $\delta_d = 0.0097$, $\delta_s = 0.68$, and we will
+use these throughout as a worked example.
+
+Throughout, ``geometric with parameter $\lambda$'' means the version supported on
+$\{0, 1, 2, \dots\}$,
+\begin{equation}
+\Pr(G = k) \;=\; \lambda (1-\lambda)^k , \qquad k = 0, 1, 2, \dots
+\label{eq:geom}
+\end{equation}
+This is what \texttt{std::geometric\_distribution} gives, and what NGSNGS's
+\texttt{Random\_geometric\_k} gives, so the two codebases agree on what $\lambda$
+means. Its mean is $(1-\lambda)/\lambda$, which at $\lambda = 0.36$ is $1.78$
+nucleotides --- matching the ``1.6--1.8 nucleotides'' quoted in the paper. Good; we
+have the right parameterization.
+
+The one quantity we will keep reaching for is the \emph{survival function}
+\begin{equation}
+\Pr(G \geq n) \;=\; \sum_{k \geq n} \lambda(1-\lambda)^k \;=\; (1-\lambda)^n .
+\label{eq:surv}
+\end{equation}
+
+\section{Correction 1: the factor of one half}
+
+\subsection{Where the one half comes from}
+
+Consider the left end of the duplex. Both strands broke, at nearby but not identical
+places. Two things can have happened:
+
+\begin{itemize}
+\item The strand we are going to sequence sticks out. Its $5'$ end is unpaired: a
+      \textbf{$5'$ overhang}, single-stranded, free to deaminate.
+\item The \emph{other} strand sticks out. Then our strand is the recessed one, and the
+      protruding piece is the other strand's $3'$ end: a \textbf{$3'$ overhang}.
+\end{itemize}
+
+There is no reason for one to be more common than the other --- Briggs et al.\ say
+``we assume overhangs are equally likely to extend either the $5'$ or $3'$ strand''
+--- so each happens with probability $\tfrac12$.
+
+Now library preparation. T4 polymerase blunt-end repair does two different things to
+these two cases:
+\begin{itemize}
+\item a $5'$ overhang is \emph{filled in}: the strand itself survives intact, uracils
+      and all, and those uracils are later read as T;
+\item a $3'$ overhang is \emph{chewed back} by the $3' \!\to\! 5'$ exonuclease: the
+      protruding piece is destroyed, and any damage it carried is gone forever.
+\end{itemize}
+
+So only half of the ends leave a single-stranded region we can ever observe. This is
+exactly what the paper says in the main text: the end repair step ``eliminates all
+$3'$-overhanging ends and preserves only $5'$-overhanging ends''.
+
+\subsection{The resulting distribution}
+
+Let $\Ol$ be the length of the \emph{observable} single-stranded region at the $5'$
+end of our strand. Writing $B \sim \mathrm{Bernoulli}(\tfrac12)$ for ``this end was a
+$5'$ overhang'' and $G$ for the geometric of~\eqref{eq:geom},
+\begin{equation}
+\Ol \;=\; B \cdot G .
+\end{equation}
+Explicitly,
+\begin{equation}
+\Pr(\Ol = 0) \;=\; \tfrac12 + \tfrac12 \lambda ,
+\qquad
+\Pr(\Ol = k) \;=\; \tfrac12\, \lambda (1-\lambda)^k \quad (k \geq 1).
+\label{eq:mixture}
+\end{equation}
+Half a point mass at zero, half a geometric. And the quantity that will do all the
+work, using~\eqref{eq:surv}:
+\begin{equation}
+\boxed{\;\Pr(\Ol \geq n) \;=\; \tfrac12 (1-\lambda)^n \;}
+\qquad n \geq 1 .
+\label{eq:survhalf}
+\end{equation}
+
+\medskip
+\noindent
+\textbf{What \texttt{deamSim} did instead.} It drew a geometric at both ends, with no
+Bernoulli in front:
+\begin{verbatim}
+    int overhang5p = overhang(generator);
+    int overhang3p = overhang(generator);
+\end{verbatim}
+that is, $\Ol = G$ and therefore $\Pr(\Ol \geq n) = (1-\lambda)^n$. Twice
+\eqref{eq:survhalf}, at every single $n$.
+
+\subsection{What that does to the damage}
+
+Position $n$ is single-stranded exactly when the overhang reaches it, i.e.\ when
+$\Ol \geq n$. Conditioning on that:
+\begin{equation}
+\Pr(\text{C}\!\to\!\text{T at } n)
+ \;=\; \underbrace{\Pr(\Ol \geq n)\, \delta_s}_{\text{single-stranded}}
+ \;+\; \underbrace{\Pr(\Ol < n)\, \Pr(\text{$n$ upstream of the nick})\, \delta_d}_{\text{double-stranded}} .
+\label{eq:perpos}
+\end{equation}
+Since $\delta_d \approx 0.01$ while $\delta_s \approx 0.68$, near the end of the
+molecule the first term is what matters. Substituting the two survival functions into
+the first term of~\eqref{eq:perpos}:
+\begin{align}
+\text{Briggs:}    \qquad & \tfrac12 (1-\lambda)^n\, \delta_s , \\
+\text{\texttt{deamSim} (old):} \qquad & (1-\lambda)^n\, \delta_s .
+\end{align}
+A clean factor of two at every position. At $n = 1$ with the paper's estimates:
+\begin{equation}
+\tfrac12 (1 - 0.36)(0.68) = 0.218
+\qquad \text{versus} \qquad
+(1 - 0.36)(0.68) = 0.435 .
+\end{equation}
+
+The same argument runs at the other end. There, the observable single-stranded region
+belongs to the \emph{complementary} strand, whose deaminated Cs get copied into our
+strand as A during the fill-in, which is why that end shows G$\to$A rather than
+C$\to$T. But it is the same geometry and the same $\tfrac12$.
+
+\subsection{Why this is not just a badly chosen $\lambda$}
+
+The natural hope is that the old code was simply using a different $\lambda$. It was
+not, and here is the one-line proof.
+
+Suppose some $\lambda'$ made the old (pure geometric) model agree with the correct one
+at every position. Then from~\eqref{eq:survhalf} we would need
+\begin{equation}
+(1-\lambda')^n \;=\; \tfrac12 (1-\lambda)^n \qquad \text{for all } n \geq 1 .
+\end{equation}
+Take $n = 1$: this gives $1 - \lambda' = \tfrac12 (1-\lambda)$. Square both sides:
+\begin{equation}
+(1-\lambda')^2 \;=\; \tfrac14 (1-\lambda)^2 .
+\end{equation}
+But taking $n = 2$ in the requirement gives $(1-\lambda')^2 = \tfrac12 (1-\lambda)^2$.
+Since $\tfrac14 \neq \tfrac12$, no such $\lambda'$ exists.
+
+The reason is structural: a mixture with a point mass at zero is not a geometric. The
+tail of \eqref{eq:mixture} decays at rate $(1-\lambda)$, so matching the tail forces
+$\lambda' = \lambda$, and then every non-zero length is off by exactly two.
+
+\subsection{Why halving $\delta_s$ is not a fix either}
+
+A subtler hope: leave the overhang wrong and halve $\delta_s$. Look
+at~\eqref{eq:perpos} --- the leading term is a product $\Pr(\Ol \geq n)\,\delta_s$,
+so halving $\delta_s$ does restore the per-position rate. This works, and it is worth
+understanding why it is still not the same model.
+
+It fails as soon as you ask about \emph{two} positions in the same read. Take
+positions 1 and 2, both C in the reference, and ignore $\delta_d$:
+\begin{align}
+\text{correct model:} \qquad
+  & \Pr(\Ol \geq 2)\, \delta_s^2 \;=\; \tfrac12 (1-\lambda)^2 \delta_s^2 , \\
+\text{old model, } \delta_s \to \delta_s/2: \qquad
+  & (1-\lambda)^2 \left(\tfrac{\delta_s}{2}\right)^{\!2}
+    \;=\; \tfrac14 (1-\lambda)^2 \delta_s^2 .
+\end{align}
+Another factor of two, in the opposite direction. The marginals agree and the joint
+does not. Intuitively: the correct model says half your molecules have no overhang at
+all and the other half have an overhang whose Cs are deaminated with high probability
+$\delta_s$; the rescaled model says every molecule has an overhang but each C is
+deaminated only half as often. Those look identical one position at a time and quite
+different at the level of a read --- which is precisely the level at which tools like
+PMDtools and the read classification in ngsBriggs operate.
+
+Measured on $600{,}000$ fragments with the actual binaries:
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+ & $\Pr(\text{pos } 1)$ & $\Pr(\text{pos } 2)$ & $\Pr(\text{pos }1 \text{ and } 2)$ \\
+\midrule
+correct model, $\delta_s = 0.68$            & 0.2244 & 0.1492 & 0.0947 \\
+old model, $\delta_s$ halved to $0.34$      & 0.2207 & 0.1433 & 0.0464 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{The fix}
+
+\begin{verbatim}
+    do{
+        overhang5p = (randomProb(!seedSpecified)<0.5) ? overhang(generator) : 0;
+        overhang3p = (randomProb(!seedSpecified)<0.5) ? overhang(generator) : 0;
+    }while( (overhang5p+overhang3p) > (int(seq.size())-2) );
+\end{verbatim}
+
+\noindent
+The rejection loop is the second half of the same paragraph in the paper: the two
+overhangs together have to leave at least two bases of double-stranded DNA, otherwise
+the molecule falls apart and is never sequenced. NGSNGS enforces the same condition.
+The old code instead let the overhangs meet and then treated the whole fragment as
+single-stranded --- negligible at $\lambda = 0.36$ on $60$\,bp fragments, but not for
+short fragments or long mean overhangs.
+
+\section{Correction 2: the nick position}
+
+\subsection{What a nick does}
+
+A nick is a break in the backbone of the \emph{opposite} strand. During library
+preparation the strand-displacing polymerase extends from it, so everything downstream
+of the nick in the final read is a copy of the opposite strand rather than the
+original. Consequence: upstream of the nick a deaminated C reads as C$\to$T, and
+downstream of it the opposite strand's deaminated Cs read as G$\to$A. This is what
+produces the slow crossover from C$\to$T to G$\to$A along the interior of the
+molecule, and \texttt{deamSim} models it correctly.
+
+What was wrong is \emph{where} the nick goes.
+
+\subsection{Uniform, not geometric}
+
+Nicks arise at rate $\nu$ per base, so naively the first nick is geometric. Two things
+break that:
+
+\begin{enumerate}
+\item A nick sitting in a single-stranded overhang is not observable. It does not
+      split anything --- it just makes the overhang shorter. Only the double-stranded
+      region can carry an observable nick.
+\item If a fragment has a nick on one strand and a second nick further along on the
+      other strand, the two replication forks meet during nick repair and the molecule
+      splits in two. That fragment is lost and never sequenced.
+\end{enumerate}
+
+Point 2 removes the molecules with many nicks, and the surviving ones are those with
+essentially one. Briggs et al.\ state the outcome directly: this ``causes the
+distribution of first nicks in the sequenced fragments to be uniform rather than
+geometric''.
+
+Concretely, let $\ell$ and $r$ be the two overhang lengths and let
+$D = L - \ell - r$ be the number of double-stranded bases. Let $M$ be the last
+position still read from the original strand, so C$\to$T applies at $\delta_d$ for
+$i \leq M$ and G$\to$A at $\delta_d$ for $i > M$. Then
+\begin{equation}
+\Pr(M = m) = \frac{\nu}{Z} \quad \text{for each of the } D-1 \text{ interior positions},
+\qquad
+\Pr(\text{no nick}) = \frac{1-\nu}{Z} ,
+\end{equation}
+with the normalizing constant
+\begin{equation}
+Z \;=\; (D-1)\,\nu \;+\; (1 - \nu) .
+\end{equation}
+Uniform over where the nick can be, with the leftover mass on ``no nick at all''.
+
+\medskip
+\noindent
+\textbf{What \texttt{deamSim} did instead.} It walked the fragment from position 1,
+flipping a $\nu$-coin at each base and stopping at the first success --- a geometric
+--- and it did that walk across the overhangs too, where by point~1 above a nick
+should not count.
+
+The two disagree most visibly on how often there is no nick at all. At $L = 60$ and
+$\nu = 0.024$:
+\begin{equation}
+\underbrace{(1-\nu)^{L} = 0.976^{60} = 0.233}_{\text{old}}
+\qquad \text{versus} \qquad
+\underbrace{\frac{1-\nu}{59\nu + 1 - \nu} = \frac{0.976}{2.392} = 0.408}_{\text{Briggs}} .
+\end{equation}
+
+\subsection{How much this matters}
+
+Much less than correction 1, because everything here is multiplied by
+$\delta_d \approx 0.01$ rather than $\delta_s \approx 0.68$. Its signature is the
+position of the C$\to$T / G$\to$A crossover in the interior of the molecule --- the
+geometric put it too far towards the $5'$ end. Simulated on $600{,}000$ $60$\,bp
+fragments:
+
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+& \multicolumn{2}{c}{corrected} & \multicolumn{2}{c}{old} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+position & C$\to$T & G$\to$A & C$\to$T & G$\to$A \\
+\midrule
+15 & 0.0088 & 0.0014 & 0.0069 & 0.0032 \\
+25 & 0.0072 & 0.0027 & 0.0052 & 0.0045 \\
+35 & 0.0061 & 0.0036 & 0.0040 & 0.0056 \\
+45 & 0.0053 & 0.0048 & 0.0033 & 0.0075 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+Note that the corrected version keeps C$\to$T above G$\to$A for much longer, which is
+what the paper reports seeing in the data: ``the frequency of C to T substitutions
+decreases steadily throughout the molecule toward $3'$ ends \ldots\ whereas G to A
+substitutions do not seem to be elevated to the very $5'$ ends''. Since $\nu$ is
+estimated largely from this crossover, this is the most likely reason mapDamage
+recovered a wrong nick frequency from gargammel output.
+
+\section{Does the fix work?}
+
+Three independent things to check against.
+
+\paragraph{Against the paper's own data.} Briggs et al.\ report $21\%$ C$\to$T on the
+$5'$-most base of the Neandertal reads, and fit their four parameters to reproduce
+that. Feeding those same fitted parameters back through the simulator has to return
+roughly $21\%$.
+
+\paragraph{Against an independent implementation.} NGSNGS
+(\texttt{Biotin\_ds\_454Roche} in \texttt{Briggs.cpp}) implements the same model from
+scratch, in a different group, with the $\tfrac12$ and the uniform nick.
+
+\paragraph{Against the old behavior.} \texttt{-damagelegacy} has to reproduce the
+previous output exactly, so that old simulations remain reproducible. (It does: the
+output is byte-identical for a given seed.)
+
+\begin{center}
+\begin{tabular}{ccccc}
+\toprule
+position & corrected \texttt{-damage} & \texttt{-damagelegacy} & NGSNGS & Briggs 2007 observed \\
+\midrule
+1 & 0.2244 & 0.4382 & 0.2254 & 0.21 \\
+2 & 0.1492 & 0.2805 & 0.1469 & \\
+3 & 0.0966 & 0.1863 & 0.0979 & \\
+4 & 0.0658 & 0.1199 & 0.0653 & \\
+5 & 0.0456 & 0.0825 & 0.0460 & \\
+6 & 0.0322 & 0.0536 & 0.0319 & \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+All simulated with $\nu = 0.024$, $\lambda = 0.36$, $\delta_d = 0.0097$,
+$\delta_s = 0.68$ on $600{,}000$ random $60$\,bp fragments.
+
+The corrected column agrees with the independent implementation to within Monte Carlo
+noise, and lands close to the observed $21\%$; the legacy column is twice too large.
+The remaining gap between $0.224$ and $0.21$ is the real data being slightly below the
+fitted model, not a property of the simulator.
+
+\section{Summary}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+ & old \texttt{deamSim} & Briggs et al.\ 2007 \\
+\midrule
+$\Pr(\Ol \geq n)$ & $(1-\lambda)^n$ & $\tfrac12 (1-\lambda)^n$ \\[2pt]
+overhangs may meet & yes, whole fragment ss & no, rejected \\[2pt]
+first nick & geometric, whole fragment & uniform, double-stranded part only \\[2pt]
+$5'$-most C$\to$T at the MLEs & $0.438$ & $0.224$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+The first row is the whole story; everything else is a detail by comparison.
+
+\section*{References}
+
+\begin{itemize}
+\item Briggs, A.W., Stenzel, U., Johnson, P.L.F., Green, R.E., Kelso, J., Pr\"ufer, K.,
+      Meyer, M., Krause, J., Ronan, M.T., Lachmann, M., P\"a\"abo, S. (2007).
+      Patterns of damage in genomic DNA sequences from a Neandertal.
+      \emph{PNAS} 104(37):14616--14621. Model description on p.\ 14619 and in the SI Text.
+\item Zhao, L., Henriksen, R.A., Rams\o{}e, A., Nielsen, R., Korneliussen, T.S. (2025).
+      Revisiting the Briggs ancient DNA damage model: a fast maximum likelihood method
+      to estimate post-mortem damage. \emph{Molecular Ecology Resources} 25:e14029.
+\item NGSNGS, \texttt{Briggs.cpp}, function \texttt{Biotin\_ds\_454Roche}:
+      \url{https://github.com/RAHenriksen/NGSNGS}
+\end{itemize}
+
+\end{document}

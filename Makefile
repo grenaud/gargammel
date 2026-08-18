@@ -34,19 +34,51 @@ bamtools/lib/libbamtools.so: bamtools/src/api/BamAlignment.h
 	cd bamtools/ && mkdir -p build/  && cd build/ && if cmake ..; then echo ""; else if cmake3 ..; then echo ""; else echo "cmake failed, please install cmake v3"; fi  fi  && make
 	cp bamtools/build/src/api/bamtools_api_export.h bamtools/src/api && cd ../.. 
 
-art_src_MountRainier/art_illumina_src/art_illumina.o: #todo: add wget after rm 
+# ART is fetched as an upstream tarball and then patched: see
+# patches/art_illumina_gargammel.patch for what the patch changes and why.
+# The touch after patching stops make from trying to re-run automake/autoconf
+# just because Makefile.am and configure.ac are now newer than what they generate.
+ARTPATCH = patches/art_illumina_gargammel.patch
+
+art_src_MountRainier/art_illumina_src/art_illumina.o: $(ARTPATCH) #todo: add wget after rm
 	rm -rf art_src_MountRainier/ art_src_MountRainier_Linux/ art_src_MountRainier_MacOS/ artsrcmountrainier20160605linuxtgz.tgz artsrcmountrainier20160605macostgz.tgz
 ifeq ($(OS),Darwin)
-	wget -O artsrcmountrainier20160605macostgz.tgz https://www.dropbox.com/s/6zjipl74de9akg5/artsrcmountrainier2016.06.05macos.tgz?dl=0 
+	wget -O artsrcmountrainier20160605macostgz.tgz https://www.dropbox.com/s/6zjipl74de9akg5/artsrcmountrainier2016.06.05macos.tgz?dl=0
 	tar xvfz artsrcmountrainier20160605macostgz.tgz
+	patch -p1 -d art_src_MountRainier_MacOS/ < $(ARTPATCH)
+	touch art_src_MountRainier_MacOS/aclocal.m4 art_src_MountRainier_MacOS/configure art_src_MountRainier_MacOS/config.h.in art_src_MountRainier_MacOS/Makefile.in
 	cd art_src_MountRainier_MacOS/ && ./configure && make && cd ..
 	ln -s art_src_MountRainier_MacOS  art_src_MountRainier
 else
 	wget -O artsrcmountrainier20160605linuxtgz.tgz https://www.dropbox.com/s/wf8441vslu1f1nd/artsrcmountrainier20160605linuxtgz.tgz?dl=0
 	tar xvfz artsrcmountrainier20160605linuxtgz.tgz
+	patch -p1 -d art_src_MountRainier_Linux/ < $(ARTPATCH)
+	touch art_src_MountRainier_Linux/aclocal.m4 art_src_MountRainier_Linux/configure art_src_MountRainier_Linux/config.h.in art_src_MountRainier_Linux/Makefile.in
 	cd art_src_MountRainier_Linux/ && ./configure && make && cd ..
 	ln -s art_src_MountRainier_Linux  art_src_MountRainier
 endif
+
+# Statically linked binaries, for copying to a machine that does not have the
+# same shared libraries, or for a cluster where they cannot be installed.  This
+# builds everything the ordinary way first, then relinks the six programs in
+# src/ and art_illumina against the static libc, libstdc++, libz and libgsl.
+# libgab and bamtools are linked from their .a archives either way, so only the
+# system libraries change.
+#
+# It needs the static system libraries to be installed, which is a separate
+# package from the headers on most distributions: on Debian/Ubuntu that is
+# libc6-dev, zlib1g-dev and libgsl-dev, all of which ship the .a alongside the
+# .so.  On macOS Apple does not ship a static libc and the link will fail; use
+# the ordinary build there.
+static: all
+	$(MAKE) -C src static
+	rm -f art_src_MountRainier/art_illumina
+	cd art_src_MountRainier/ && $(MAKE) art_illumina LDFLAGS="-static"
+	@echo ""
+	@echo "Static binaries:"
+	@for b in src/fragSim src/deamSim src/adptSim src/fasta2fastas src/damage_patterns2prof src/mapDamage2prof art_src_MountRainier/art_illumina; do \
+		if file $$b 2>/dev/null | grep -q 'statically linked'; then echo "  ok      $$b"; else echo "  DYNAMIC $$b"; fi; \
+	done
 
 bacterialex:
 	mkdir -p bactDBexample
@@ -65,4 +97,4 @@ test: all
 	bash tests/run_tests.sh $(TESTARGS)
 
 
-.PHONY: all test
+.PHONY: all static test

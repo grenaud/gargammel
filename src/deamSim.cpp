@@ -59,6 +59,7 @@ int main (int argc, char *argv[]) {
     bool lastRowMatrix         =true;
     //Deamination parameters
     bool useBriggs             =false;
+    bool briggsLegacy          =false;
     double vBrgs = 0.0;
     double lBrgs = 0.0;
     double dBrgs = 0.0;
@@ -174,6 +175,12 @@ int main (int argc, char *argv[]) {
                               "\t\t"+"                               " +"\t\t"+"\td: prob. of deamination of Cs in double-stranded parts"+"\n"+
                               "\t\t"+"                               " +"\t\t"+"\ts: prob. of deamination of Cs in single-stranded parts"+"\n"+
 
+			      "\t\t"+"-damagelegacy [v,l,d,s]" +"\t\t\t"+"Same parameters as -damage but using the overhang and"+"\n"+
+                              "\t\t"+"                               " +"\t\t"+"nick distributions used by gargammel up to version 1.1.4."+"\n"+
+                              "\t\t"+"                               " +"\t\t"+"Those drew a geometric overhang at both ends and placed"+"\n"+
+                              "\t\t"+"                               " +"\t\t"+"the nick geometrically, which doubles the damage at the"+"\n"+
+                              "\t\t"+"                               " +"\t\t"+"terminal positions. Only use it to reproduce older runs."+"\n"+
+
 
 			      // "\t\t"+"-damagess     [d,s5,s3,l5,l3]" +"\t\t\t"+"Single-strand model"+"\n"+
                               // "\t\t"+"                               " +"\t\t"+"The parameters must be comma-separated e.g.: -damagess 0.01,0.5,0.7,0.6,0.7"+"\n"+
@@ -282,9 +289,10 @@ int main (int argc, char *argv[]) {
 	    continue;
 	}
 
-	if(string(argv[i]) == "-damage" ){
+	if(string(argv[i]) == "-damage" || string(argv[i]) == "-damagelegacy" ){
 	    string parametersB          = string(argv[i+1]);
 	    useBriggs                   = true;
+	    briggsLegacy                = (string(argv[i]) == "-damagelegacy");
 	    vector<string> temps=allTokens(parametersB,',');
 	    if(temps.size()!=4){
 		cerr << "Specify 4 comma-separated values for the Briggs model, you entered:"<<parametersB<<endl;
@@ -1475,9 +1483,30 @@ int main (int argc, char *argv[]) {
 #endif
 
 	    if(useBriggs){
-		int overhang5p=overhang(generator);
-		int overhang3p=overhang(generator);
-	    
+		int overhang5p;
+		int overhang3p;
+
+		if(briggsLegacy){
+		    overhang5p=overhang(generator);
+		    overhang3p=overhang(generator);
+		}else{
+		    //Briggs et al. 2007 assume overhangs are equally likely to extend the
+		    //5' or the 3' strand, and the blunt-end repair step of the library
+		    //preparation removes every 3' overhang while preserving 5' ones. Each
+		    //end therefore carries an observable single-stranded region only half
+		    //of the time, the other half being a point mass at zero. The two
+		    //overhangs must also leave at least 2 bases of double-stranded DNA.
+		    if(int(seq.size())<2){
+			overhang5p=0;
+			overhang3p=0;
+		    }else{
+			do{
+			    overhang5p = (randomProb(!seedSpecified)<0.5) ? overhang(generator) : 0;
+			    overhang3p = (randomProb(!seedSpecified)<0.5) ? overhang(generator) : 0;
+			}while( (overhang5p+overhang3p) > (int(seq.size())-2) );
+		    }
+		}
+
 		bool placedNick = false;
 		int indexNick   = -1;
 		if( (overhang5p+overhang3p)>=int(seq.size())){//all single strand
@@ -1494,21 +1523,48 @@ int main (int argc, char *argv[]) {
 		    }
 
 		}else{
-	
+
+		    if(!briggsLegacy){
+			//Briggs et al. 2007: nicks falling in a single-stranded overhang are
+			//not observable, they merely shorten the overhang, so only the
+			//double-stranded region can carry one. Fragments whose first nick is
+			//followed by a second one on the opposite strand are lost during the
+			//nick repair, which "causes the distribution of first nicks in the
+			//sequenced fragments to be uniform rather than geometric".
+			int lastDS = int(seq.size())-overhang3p-1; //last double-stranded base
+			if( (lastDS-overhang5p) >= 1 ){
+			    double norm = double(lastDS-overhang5p)*vBrgs + (1.0-vBrgs);
+			    double pNck = vBrgs/norm;
+			    double u    = randomProb(!seedSpecified);
+			    double cumd = pNck;
+			    int    lastBeforeNick = overhang5p;
+			    while( (u>cumd) && (lastBeforeNick<lastDS) ){
+				cumd          += pNck;
+				lastBeforeNick+= 1;
+			    }
+			    //the residual mass sits on lastDS and stands for "no nick"
+			    if(lastBeforeNick<lastDS){
+				placedNick = true;
+				indexNick  = lastBeforeNick+1;
+			    }
+			}
+		    }
+
 		    //Placing a nick (maybe)
 		    for(int i=0;i<int(seq.size());i++){
 #ifdef DEBUG
 			cerr<<i<<"\t"<<placedNick<<endl;
 #endif
-			if(!placedNick)
-			    if(randomProb(!seedSpecified) < vBrgs){ //nick is present
-				placedNick=true;
-				indexNick =i;			
-			    }
+			if(briggsLegacy)
+			    if(!placedNick)
+				if(randomProb(!seedSpecified) < vBrgs){ //nick is present
+				    placedNick=true;
+				    indexNick =i;
+				}
 
 
-			if(placedNick){
-			
+			if(placedNick && (i>=indexNick) ){
+
 			    //in 5p overhang
 			    if((i+1)<=overhang5p){
 #ifdef DEBUG

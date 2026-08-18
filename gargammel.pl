@@ -68,6 +68,20 @@ sub copycmd{
 }
 
 
+# Master seed given with --seed, and a counter so each sub-program invocation
+# gets its own derived seed.  Handing the same seed to every program would make
+# them share a random stream; deriving one per call keeps the whole pipeline
+# reproducible while leaving the individual streams independent.
+my $seed;
+my $seedcounter = 0;
+
+sub seedArg{
+  my ($flag) = @_;
+  return "" unless (defined $seed);
+  $seedcounter++;
+  return " ".$flag." ".(($seed + $seedcounter) % 4294967291)." ";
+}
+
 sub runcmd{
   my ($cmdtorun) = @_;
 
@@ -260,6 +274,11 @@ my $distmis=1;
 my $qs =0;
 my $qs2=0;
 
+#Sequencing indels are on by default, at the rates art_illumina was built with.
+#--noindel switches them off, which is what gargammel produced before 1.1.5, as
+#the rates were never actually applied due to a bug in art's set_rate().
+my $noindel=0;
+
 
 sub usage
 {
@@ -345,6 +364,10 @@ sub usage
 		                  \t\t\td: prob. of deamination of Cs in double-stranded parts
 		                  \t\t\ts: prob. of deamination of Cs in single-stranded parts\n".
 
+  "\t-damagelegacy\t\t  \tUse the overhang and nick distributions used by gargammel
+		                  \t\tup to version 1.1.4 for every -damage* option above.
+		                  \t\tThose doubled the damage at the terminal positions;
+		                  \t\tonly use this to reproduce older runs.\n".
 
   "\n".
   " Alternatively, you can specify these options independently for the endogenous (e), bacterial (b)\n".
@@ -385,6 +408,17 @@ sub usage
                                         \twill decrease the rate of such errors and a negative one will increase it.
         -qs     [factor]                \tIncrease error rate for forward reads by a factor of 1/(10^([factor]/10)) (Default: ".$qs.")
         -qs2    [factor]                \tIncrease error rate for reverse reads by a factor of 1/(10^([factor]/10)) (Default: ".$qs2.")
+
+	--noindel                       \tDo not simulate sequencing insertions and deletions, only
+	                                \tsubstitutions. art uses a per-base rate of 9e-5 (ins) and
+	                                \t1.1e-4 (del) for the forward read, 1.5e-4 and 2.3e-4 for the
+	                                \treverse one, which puts an indel in about 1.5% of 75bp reads.
+	                                \tThose rates were not applied before gargammel 1.1.5, so use
+	                                \tthis for output comparable with an earlier version.
+
+	--seed  [int]                   \tSeed the random number generators so that a run is exactly reproducible.
+	                                \tEach sub-program (fragSim, deamSim, adptSim, art) receives its own
+	                                \tseed derived from this one. (Default: seeded from the clock)
 
 
 	-ss     [system]                \tIllumina platfrom to use, the parentheses indicate the max. read length
@@ -432,6 +466,7 @@ my $matfilenonmeth;
 my $matfilemeth;
 
 my $briggs;
+my $damagelegacy = 0;
 
 my @mapdamagee;
 my $matfilee;
@@ -458,8 +493,17 @@ my $methyl;
 my $dirWithChr = $ARGV[$#ARGV];
 
 usage() if ( @ARGV < 1 or
-	     ! GetOptions('help|?' => \$help, 'mock' => \$mock, 'methyl' => \$methyl, 'uniq' => \$uniq, 'se' => \$se, 'ss=s' => \$ss, 'distmis=i' => \$distmis, 'misince=s' => \$misince,'misincb=s' => \$misincb,'misincc=s' => \$misincc, 'comp=s' => \$comp,'mapdamage=s{2}' => \@mapdamage, 'mapdamagee=s{2}' => \@mapdamagee, 'mapdamageb=s{2}' => \@mapdamageb, 'mapdamagec=s{2}' => \@mapdamagec,'matfile=s' => \$matfile, 'damage=s' => \$briggs,'matfilee=s' => \$matfilee,'matfilenonmeth=s' => \$matfilenonmeth, ,'matfilemeth=s' => \$matfilemeth, 'damagee=s' => \$briggse,'matfileb=s' => \$matfileb, 'damageb=s' => \$briggsb,'matfilec=s' => \$matfilec, 'damagec=s' => \$briggsc,'o=s' => \$outputprefix, 'n=i' => \$numberOfFragments,'l=i' => \$fraglength, 's=s' => \$filefragsize, 'f=s' => \$filefragfreqsize, 'loc=s' => \$loc, 'fa=s' => \$fa, 'sa=s' => \$sa, 'rl=s' => \$rl, 'scale=s' => \$scale, 'c=f' => \$coverage, 'minsize=i' => \$minsize,'maxsize=i' => \$maxsize,'qs=i' => \$qs,'qs2=i' => \$qs2)
+	     ! GetOptions('help|?' => \$help, 'mock' => \$mock, 'methyl' => \$methyl, 'uniq' => \$uniq, 'se' => \$se, 'ss=s' => \$ss, 'distmis=i' => \$distmis, 'misince=s' => \$misince,'misincb=s' => \$misincb,'misincc=s' => \$misincc, 'comp=s' => \$comp,'mapdamage=s{2}' => \@mapdamage, 'mapdamagee=s{2}' => \@mapdamagee, 'mapdamageb=s{2}' => \@mapdamageb, 'mapdamagec=s{2}' => \@mapdamagec,'matfile=s' => \$matfile, 'damage=s' => \$briggs, 'damagelegacy' => \$damagelegacy,'matfilee=s' => \$matfilee,'matfilenonmeth=s' => \$matfilenonmeth, ,'matfilemeth=s' => \$matfilemeth, 'damagee=s' => \$briggse,'matfileb=s' => \$matfileb, 'damageb=s' => \$briggsb,'matfilec=s' => \$matfilec, 'damagec=s' => \$briggsc,'o=s' => \$outputprefix, 'n=i' => \$numberOfFragments,'l=i' => \$fraglength, 's=s' => \$filefragsize, 'f=s' => \$filefragfreqsize, 'loc=s' => \$loc, 'fa=s' => \$fa, 'sa=s' => \$sa, 'rl=s' => \$rl, 'scale=s' => \$scale, 'c=f' => \$coverage, 'minsize=i' => \$minsize,'maxsize=i' => \$maxsize,'qs=i' => \$qs,'qs2=i' => \$qs2, 'seed=i' => \$seed, 'noindel' => \$noindel)
           or defined $help );
+
+my $damageopt = $damagelegacy ? "-damagelegacy" : "-damage";
+
+if( defined $seed ){
+  # gargammel.pl draws random numbers of its own -- to split the requested
+  # number of fragments between the input files and to pick strands -- so the
+  # wrapper has to be seeded as well as the programs it drives.
+  srand( $seed );
+}
 
 if( !(defined $ss) ){
   $ss = "HS25";
@@ -1481,7 +1525,7 @@ if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
     }
 
     if ($diploidMode) {
-      my $cmd1="".$fragsim." -tag e1_".$i." -n ".$numberOfFragmentsE1;
+      my $cmd1="".$fragsim.seedArg("--seed")." -tag e1_".$i." -n ".$numberOfFragmentsE1;
 
       $cmd1 .= " -m ".$minsize." ";
       $cmd1 .= " -M ".$maxsize." ";
@@ -1526,7 +1570,7 @@ if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
 
       runcmd($cmd1);
 
-      my $cmd2="".$fragsim." -tag e2_".$i." -n ".$numberOfFragmentsE2;
+      my $cmd2="".$fragsim.seedArg("--seed")." -tag e2_".$i." -n ".$numberOfFragmentsE2;
 
       $cmd2 .= " -m ".$minsize." ";
       $cmd2 .= " -M ".$maxsize." ";
@@ -1559,7 +1603,7 @@ if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
       #haploid mode
     } else {
 
-      my $cmd1="".$fragsim." -tag e -n ".$numberOfFragmentsE1;
+      my $cmd1="".$fragsim.seedArg("--seed")." -tag e -n ".$numberOfFragmentsE1;
 
       $cmd1 .= " -m ".$minsize." ";
       $cmd1 .= " -M ".$maxsize." ";
@@ -1605,7 +1649,7 @@ if ($#arrayofFilesendo != -1 && $numberOfFragmentsE>0) {
 if ($#arrayofFilescont != -1 && $numberOfFragmentsC>0) {
 
   for (my $i=0;$i<=$#arrayofFilescont;$i++) {
-    my $cmd1="".$fragsim." -tag c".($i+1)." -n ".$arrayofFilescontToExtract[$i];
+    my $cmd1="".$fragsim.seedArg("--seed")." -tag c".($i+1)." -n ".$arrayofFilescontToExtract[$i];
 
     $cmd1 .= " -m ".$minsize." ";
     $cmd1 .= " -M ".$maxsize." ";
@@ -1653,7 +1697,7 @@ if ($#arrayofFilescont != -1 && $numberOfFragmentsC>0) {
 #SELECTING BACTERIAL FRAGMENTS
 if ($#arrayofFilesbact != -1 && $numberOfFragmentsB>0) {
   for (my $i=0;$i<=$#arrayofFilesbact;$i++) {
-    my $cmd1="".$fragsim." -tag b".($i+1)." -n ".$arrayofFilesbactToExtract[$i];
+    my $cmd1="".$fragsim.seedArg("--seed")." -tag b".($i+1)." -n ".$arrayofFilesbactToExtract[$i];
 
     $cmd1 .= " -m ".$minsize." ";
     $cmd1 .= " -M ".$maxsize." ";
@@ -1713,7 +1757,7 @@ if( (defined $matfilenonmeth)
     ||
     (@mapdamagee) ){
 
-  my $cmde="".$deamsim." ";
+  my $cmde="".$deamsim.seedArg("--seed")." ";
   if( (defined $matfilee) ){
     $cmde .= " -matfile ".$matfilee." ";
   }
@@ -1727,7 +1771,7 @@ if( (defined $matfilenonmeth)
   }
 
   if( (defined $briggse) ){
-    $cmde .= " -damage ".$briggse." ";
+    $cmde .= " ".$damageopt." ".$briggse." ";
   }
 
   if( (@mapdamagee) ){
@@ -1756,7 +1800,7 @@ if( (defined $matfilenonmeth)
     ||
     (@mapdamageb) ){
 
-  my $cmdb="".$deamsim." ";
+  my $cmdb="".$deamsim.seedArg("--seed")." ";
   if( (defined $matfileb) ){
     $cmdb .= " -matfile ".$matfileb." ";
   }
@@ -1771,7 +1815,7 @@ if( (defined $matfilenonmeth)
   }
 
   if( (defined $briggsb) ){
-    $cmdb .= " -damage ".$briggsb." ";
+    $cmdb .= " ".$damageopt." ".$briggsb." ";
   }
 
   if( (@mapdamageb) ){
@@ -1806,7 +1850,7 @@ if( (defined $matfilenonmeth)
     ||
     (@mapdamagec) ){
 
-  my $cmdc="".$deamsim." ";
+  my $cmdc="".$deamsim.seedArg("--seed")." ";
   if( (defined $matfilec) ){
     $cmdc .= " -matfile ".$matfilec." ";
   }
@@ -1820,7 +1864,7 @@ if( (defined $matfilenonmeth)
   }
 
   if( (defined $briggsc) ){
-    $cmdc .= " -damage ".$briggsc." ";
+    $cmdc .= " ".$damageopt." ".$briggsc." ";
   }
 
   if( (@mapdamagec) ){
@@ -1843,14 +1887,18 @@ if( (defined $matfilenonmeth)
 #                      #
 ########################
 
-my $cmdad =     "".$adptsim." ";
+my $cmdad =     "".$adptsim.seedArg("--seed")." ";
 $cmdad   .= " -f ".$adapterF." ";
 $cmdad   .= " -s ".$adapterR." ";
 $cmdad   .= " -l ".$readlength." ";
+#The amplicons are written gzipped straight away: adptSim compresses a .gz
+#destination itself and the art_illumina shipped with gargammel reads a gzipped
+#reference, so the file never has to exist uncompressed and there is no gzip
+#pass over it once art is done.
 if($se){
-  $cmdad .= " -arts ".$outputprefix."_a.fa";
+  $cmdad .= " -arts ".$outputprefix."_a.fa.gz";
 }else{
-  $cmdad .= " -artp ".$outputprefix."_a.fa";
+  $cmdad .= " -artp ".$outputprefix."_a.fa.gz";
 }
 $cmdad .= "  ".$outputprefix."_d.fa.gz";
 runcmd($cmdad);
@@ -1861,36 +1909,37 @@ runcmd($cmdad);
 #                      #
 ########################
 
-my $cmdsq="".$artprog." -ss ".$ss." -amp -na ";
+my $cmdsq="".$artprog.seedArg("-rs")." -ss ".$ss." -amp -na ";
 if($se){
   $cmdsq .= "    ";
 }else{
   $cmdsq .= " -p ";
 }
-$cmdsq .= " -i ".$outputprefix."_a.fa ";
+$cmdsq .= " -i ".$outputprefix."_a.fa.gz ";
 $cmdsq .= " -l ".$readlength." ";
 $cmdsq .= " -c 1 ";
 $cmdsq .= " -qs  ".$qs." ";
 $cmdsq .= " -qs2 ".$qs2." ";
 
+#Zeroing all four rates leaves substitutions as the only sequencing error,
+#which is what gargammel produced up to 1.1.4.
+if($noindel){
+  $cmdsq .= " -ir 0 -dr 0 -ir2 0 -dr2 0 ";
+}
+
+#art compresses its own FASTQ output, so no separate gzip pass is needed.
+#Level 4 rather than gzip's default of 6: on simulated reads 6 costs several
+#times the compression time for about 8% off the file, which is a poor trade
+#for output that is usually fed straight into a mapper.
+$cmdsq .= " -gzl 4 ";
 $cmdsq .= " -o ".$outputprefix."_s";
 runcmd($cmdsq);
 
-my $cmdzip;
-
-$cmdzip = "gzip -f ".$outputprefix."_a.fa";
-runcmd($cmdzip);
+print STDERR "Amplicons handed to art available here: ".$outputprefix."_a.fa.gz\n";
 
 if($se){
-  $cmdzip = "gzip -f ".$outputprefix."_s.fq";
-  runcmd($cmdzip);
   print STDERR "Single-end reads available here: ".$outputprefix."_s.fq.gz\n";
 }else{
-  $cmdzip = "gzip -f ".$outputprefix."_s1.fq";
-  runcmd($cmdzip);
-  $cmdzip = "gzip -f ".$outputprefix."_s2.fq";
-  runcmd($cmdzip);
-
   print STDERR "Paired-end forward reads available here: ".$outputprefix."_s1.fq.gz\n";
   print STDERR "Paired-end reverse reads available here: ".$outputprefix."_s2.fq.gz\n";
 

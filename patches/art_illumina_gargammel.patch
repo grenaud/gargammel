@@ -1,0 +1,2219 @@
+# Modifications to ART (art_illumina) as shipped in
+# artsrcmountrainier20160605linuxtgz.tgz, applied by the top-level Makefile
+# right after the tarball is unpacked.
+#
+# Apply with:  patch -p1 -d art_src_MountRainier_Linux/ < patches/art_illumina_gargammel.patch
+#
+# What it changes, all of it confined to art_illumina:
+#
+#   * Reproducibility.  -rs/--rndSeed already existed, but it fed the C library
+#     rand(), whose stream is libc-specific.  The generator is now built in
+#     (art_illumina_src/artrand.h) and reproduces glibc's rand() bit for bit,
+#     so a fixed seed gives the same reads on every platform and existing
+#     results are unchanged.
+#
+#   * gzip.  Input FASTA is read through zlib, so plain and gzipped references
+#     both work with no flag.  -gz/--gzip (and -gzl for the level) compresses
+#     the FASTQ/ALN/SAM output directly, removing the need for a separate gzip
+#     pass over the reads.
+#
+#   * Pipes.  -i and the new --fq1/--fq2/--aln1/--aln2/--samFile options accept
+#     "-", "/dev/stdin", "/dev/stdout", "/dev/fd/N" and "fd:N".  When reads go
+#     to stdout the run summary moves to stderr.
+#
+#   * Speed, roughly 4x on gargammel's workload, with byte-identical output:
+#     - the per-base quality draw resolves through a bucket table instead of
+#       walking a std::map;
+#     - output is block-buffered rather than flushed once per line by endl;
+#     - FASTA parsing works on a large buffer instead of istream::get()/peek();
+#     - ini_set() uses byte tables in place of toupper() and a switch;
+#     - N-masking uses a flag array instead of a std::set;
+#     - the reference is no longer read a second time to build @SQ headers
+#       unless an ALN or SAM file is actually being written;
+#     - floor()/ceil() on non-negative values no longer call into libm.
+#
+#   * Indel bug fix (seqRead.h, set_rate).  The table that decides how many
+#     insertions/deletions a read gets was built from P(X > i) starting at i=1,
+#     so index i held P(X >= i+2) and placing a single indel was gated on the
+#     probability of needing two.  The realized indel rate was therefore some
+#     250x below the -ir/-dr given: at the defaults only 0.003% of 75bp reads
+#     carried an indel, against the ~1.5% the parameters imply.  The table now
+#     starts at i=0.  This is the one change here that alters the reads: output
+#     is no longer byte-identical to stock ART unless -ir/-dr/-ir2/-dr2 are 0.
+#
+diff -ruN a/art_illumina_src/art.h b/art_illumina_src/art.h
+--- a/art_illumina_src/art.h	2016-06-06 02:33:07.000000000 +0000
++++ b/art_illumina_src/art.h	2026-08-17 19:59:11.039129744 +0000
+@@ -43,9 +43,35 @@
+ 
+ using namespace std;
+ 
++// Byte tables replacing the per-base toupper() call and switch in ini_set().
++// ini_set() runs once per input record, so on the millions of short amplicons
++// gargammel feeds ART this loop is a large fraction of the total run time.
++struct artBaseTables{
++    char up[256];
++    char cmp[256];
++    artBaseTables(){
++        for(int i=0; i<256; i++){
++            char u=(char)i;
++            if(i>='a' && i<='z') u=(char)(i-'a'+'A');
++            up[i]=u;
++            switch(u){
++                case 'A': cmp[i]='T'; break;
++                case 'C': cmp[i]='G'; break;
++                case 'G': cmp[i]='C'; break;
++                case 'T': cmp[i]='A'; break;
++                default:  cmp[i]='N';
++            }
++        }
++    }
++};
++inline const artBaseTables& art_base_tables(){
++    static const artBaseTables t;
++    return t;
++}
++
+ class art{
+ public:
+-    //art();
++    art(): read_len(0), valid_region(0), has_masked(false) {}
+     string ref_seq;
+     string ref_seq_cmp;
+     int read_len;
+@@ -53,24 +79,16 @@
+     void ini_set(int readLen){
+         read_len=readLen;
+         valid_region=ref_seq.size()-readLen;
+-        ref_seq_cmp.resize(ref_seq.size());
+         size_t size=ref_seq.size();
++        ref_seq_cmp.resize(size);
++        if(size==0) return;
++        const artBaseTables& tb=art_base_tables();
++        char* s=&ref_seq[0];
++        char* c=&ref_seq_cmp[0];
+         for(size_t i=0; i<size; i++){
+-//            ref_seq[i]=tolower(ref_seq[i]);
+-            ref_seq[i]=toupper(ref_seq[i]);
+-            size_t k=size-i-1;
+-            switch(ref_seq[i]){
+-                case 'A':
+-                    ref_seq_cmp[k]='T'; break;
+-                case 'C':
+-                    ref_seq_cmp[k]='G'; break;
+-                case 'G':
+-                    ref_seq_cmp[k]='C'; break;
+-                case 'T':
+-                    ref_seq_cmp[k]='A'; break;
+-                default:
+-                    ref_seq_cmp[k]='N';
+-            }
++            unsigned char b=(unsigned char)s[i];
++            s[i]=tb.up[b];
++            c[size-i-1]=tb.cmp[b];
+         }
+     }
+     bool next_read_indel(seqRead& a_read);
+@@ -83,18 +101,27 @@
+     bool next_pair_ampread_indel_cmp(seqRead& read_1, seqRead& read_2);
+     bool next_matepair_ampread_indel_cmp(seqRead& read_1, seqRead& read_2);
+ 
+-    set <size_t> masked_pos;
++    // A flag per start position rather than a std::set: the set cost one
++    // red-black-tree node allocation per masked base, on every input record.
++    vector<unsigned char> masked_pos;
++    bool has_masked;
++    inline bool is_masked(size_t pos) const {
++      // Out-of-range positions were simply absent from the old set.
++      return has_masked && pos<masked_pos.size() && masked_pos[pos]!=0;
++    }
+     //region with n
+     void mask_n_region(int max_num_n){
+       masked_pos.clear(); //reset mask position
+-      if(ref_seq.size()<read_len) return;
++      has_masked=false;
++      if(ref_seq.size()<(size_t)read_len) return;
++      masked_pos.assign(ref_seq.size()-read_len+1, 0);
+       int num_n=0;
+       for(int i=0; i<read_len-1; i++){
+         if(ref_seq[i]=='N') num_n++;
+       }
+       for(size_t i=0; i<=ref_seq.size()-read_len; i++){
+         if(ref_seq[i+read_len-1]=='N') num_n++;
+-        if(num_n>=max_num_n){ masked_pos.insert(i); 
++        if(num_n>=max_num_n){ masked_pos[i]=1; has_masked=true;
+         }
+         if(ref_seq[i]=='N') num_n--;
+       }
+diff -ruN a/art_illumina_src/art_illumina.cpp b/art_illumina_src/art_illumina.cpp
+--- a/art_illumina_src/art_illumina.cpp	2016-06-06 02:33:07.000000000 +0000
++++ b/art_illumina_src/art_illumina.cpp	2026-08-17 19:59:11.040129742 +0000
+@@ -25,6 +25,7 @@
+ #include <sstream>
+ #include <string>
+ #include <cstring>
++#include <cstdio>
+ #include <time.h>
+ #include <algorithm>
+ #include <iomanip>
+@@ -33,6 +34,8 @@
+ #include "empdist.h"
+ #include "readSeqFile.h"
+ #include "samRead.h"
++#include "artio.h"
++#include "artrand.h"
+ 
+ 
+ using namespace std;
+@@ -41,15 +44,51 @@
+ int art::gaussain_mean;
+ double art::gaussain_sigma;
+ 
+-int main(int argc, char* argv[]){
+-    cout <<endl;
+-    cout << "    ====================ART===================="<<endl;
+-    cout << "             ART_Illumina (2008-2016)          "<<endl;
+-    cout << "          Q Version 2.5.8 (June 6, 2016)       "<<endl;
+-    cout << "     Contact: Weichun Huang <whduke@gmail.com> "<<endl; 
+-    cout << "    -------------------------------------------"<<endl<<endl;
++// Informational output goes to stdout as before, unless stdout is being used
++// to carry read data, in which case it moves to stderr so the two never mix.
++static ostream* g_msg = &cout;
++#define MSG (*g_msg)
++
++// True when this output target is stdout (any of "-", "/dev/stdout", "fd:1").
++static bool is_stdout_target(const string& path){
++    return art_fd_spec_number(path.c_str(), true)==1;
++}
++
++// Equivalent to `istringstream(s) >> s`: keep the first whitespace-delimited
++// token.  Doing it in place avoids constructing a stringstream per input
++// record, which is a measurable cost on millions of short amplicons.
++static inline void keep_first_token(string& s){
++    static const char* WS=" \t\n\v\f\r";
++    size_t b=s.find_first_not_of(WS);
++    if(b==string::npos){ s.clear(); return; }
++    size_t e=s.find_first_of(WS, b);
++    if(e!=string::npos) s.erase(e);
++    s.erase(0, b);
++}
++
++static inline void append_long(string& s, long v){
++    char b[24];
++    int n=snprintf(b, sizeof(b), "%ld", v);
++    s.append(b, n);
++}
++
++// Serialises one FASTQ record into `out`.  Building the whole record and
++// handing it to the stream once replaces roughly one operator<< per base.
++static inline void format_fastq(string& out, const string& name, const string& seq,
++                                const vector<short>& qual){
++    out.clear();
++    out+='@'; out+=name; out+='\n';
++    out+=seq; out+="\n+\n";
++    size_t base=out.size();
++    out.resize(base+qual.size()+1);
++    for(size_t k=0; k<qual.size(); k++){
++        out[base+k]=(char)(qual[k]+33);
++    }
++    out[base+qual.size()]='\n';
++}
+ 
+-    short min_qual_s=0; 
++int main(int argc, char* argv[]){
++    short min_qual_s=0;
+     short max_qual_s=93; 
+     const short max_qual=93; 
+     char max_q_c = (char)(max_qual_s+33);
+@@ -91,8 +130,13 @@
+     bool use_cigarM = false;
+ //    bool use_org_qscore = false;
+ 
++    // gzip / pipe support
++    bool gzip_out = false;
++    int gzip_level = 6;
++    string fq1_arg="", fq2_arg="", aln1_arg="", aln2_arg="", sam_arg="";
++
+     // Command-line Arguments
+-    string suffID=""; 
++    string suffID="";
+     string qual_file1 = "";
+     string qual_file2 = "";
+     string seqsys="";
+@@ -259,6 +303,32 @@
+ 		i++;
+ 		rand_seed = abs(atoi(argv[i]));
+ 		fixed_seed=true;
++            } else if(!strcmp(arg, "--gzip") || !strcmp(arg, "-gz")){
++		gzip_out = true;
++            } else if(!strcmp(arg, "--gzipLevel") || !strcmp(arg, "-gzl")){
++		i++;
++		gzip_level = atoi(argv[i]);
++		gzip_out = true;
++		if(gzip_level<1 || gzip_level>9){
++		   cerr << "Fatal Error: the gzip compression level must be in [1,9]." << endl;
++		   arg_success = false;
++		}
++            } else if(!strcmp(arg, "--fq1")){
++		i++;
++		fq1_arg = argv[i];
++            } else if(!strcmp(arg, "--fq2")){
++		i++;
++		fq2_arg = argv[i];
++            } else if(!strcmp(arg, "--aln1")){
++		i++;
++		aln1_arg = argv[i];
++            } else if(!strcmp(arg, "--aln2")){
++		i++;
++		aln2_arg = argv[i];
++            } else if(!strcmp(arg, "--samFile")){
++		i++;
++		sam_arg = argv[i];
++		sam_out = true;
+             } else {
+ 		arg_success = false;
+ 		cerr << "Fatal Error: " << arg << ", is not a valid parameter." << endl;
+@@ -267,10 +337,28 @@
+ 	
+     }
+ 
++    // An explicit FASTQ destination stands in for the -o prefix.
++    if(!fq1_arg.empty()) out_flag = true;
++
++    // Decide where the banner and the end-of-run summary go before printing
++    // anything, so that a pipeline reading reads from our stdout stays clean.
++    if(is_stdout_target(out_file_prefix) || is_stdout_target(fq1_arg) ||
++       is_stdout_target(fq2_arg) || is_stdout_target(aln1_arg) ||
++       is_stdout_target(aln2_arg) || is_stdout_target(sam_arg)){
++	    g_msg = &cerr;
++    }
++
++    MSG <<endl;
++    MSG << "    ====================ART===================="<<endl;
++    MSG << "             ART_Illumina (2008-2016)          "<<endl;
++    MSG << "          Q Version 2.5.8 (June 6, 2016)       "<<endl;
++    MSG << "     Contact: Weichun Huang <whduke@gmail.com> "<<endl;
++    MSG << "    -------------------------------------------"<<endl<<endl;
++
+     if(no_ALN && !sam_out){
+ 		cerr << "Warning: your simulation will not output any ALN or SAM file with your parameter settings!" << endl;
+     }
+-	
++
+     // Make sure the minimum requirements to run were met if the help tag was not given
+     if(help_flag){
+ 	arg_success = false;
+@@ -321,89 +409,103 @@
+     }
+ 
+     if(!arg_success){
+-	cout << "===== USAGE ====="<<endl << endl;
+-	cout << "art_illumina [options] -ss <sequencing_system> -sam -i <seq_ref_file> -l <read_length> -f <fold_coverage> -o <outfile_prefix>"<<endl;
+-	cout << "art_illumina [options] -ss <sequencing_system> -sam -i <seq_ref_file> -l <read_length> -c <num_reads_per_sequence> -o <outfile_prefix>"<<endl;
+-	cout << "art_illumina [options] -ss <sequencing_system> -sam -i <seq_ref_file> -l <read_length> -f <fold_coverage> -m <mean_fragsize> -s <std_fragsize> -o <outfile_prefix>"<<endl;
+-	cout << "art_illumina [options] -ss <sequencing_system> -sam -i <seq_ref_file> -l <read_length> -c <num_reads_per_sequence> -m <mean_fragsize> -s <std_fragsize> -o <outfile_prefix>"<<endl<<endl;
+-	cout << "===== PARAMETERS =====" << endl << endl;
+-	cout << "  -1   --qprof1   the first-read quality profile" << endl;
+-	cout << "  -2   --qprof2   the second-read quality profile" << endl;
+-	cout << "  -amp --amplicon amplicon sequencing simulation" << endl;
+-	cout << "  -c   --rcount   number of reads/read pairs to be generated per sequence/amplicon (not be used together with -f/--fcov)" << endl;
+-	cout << "  -d   --id       the prefix identification tag for read ID" << endl;
+-	cout << "  -ef  --errfree  indicate to generate the zero sequencing errors SAM file as well the regular one" << endl;
+-       	cout << "                  NOTE: the reads in the zero-error SAM file have the same alignment positions"<<endl;
+-       	cout << "                  as those in the regular SAM file, but have no sequencing errors"<<endl;
+-	cout << "  -f   --fcov     the fold of read coverage to be simulated or number of reads/read pairs generated for each amplicon" << endl;
+-	cout << "  -h   --help     print out usage information"<<endl;
+-	cout << "  -i   --in       the filename of input DNA/RNA reference" << endl;
+-	cout << "  -ir  --insRate  the first-read insertion rate (default: 0.00009)"<< endl;
+-	cout << "  -ir2 --insRate2 the second-read insertion rate (default: 0.00015)" << endl;
+-	cout << "  -dr  --delRate  the first-read deletion rate (default:  0.00011)" << endl;
+-	cout << "  -dr2 --delRate2 the second-read deletion rate (default: 0.00023)" << endl;
+-	cout << "  -k   --maxIndel the maximum total number of insertion and deletion per read (default: up to read length)" << endl;
+-	cout << "  -l   --len      the length of reads to be simulated" << endl;
+-	cout << "  -m   --mflen    the mean size of DNA/RNA fragments for paired-end simulations" << endl;
+-	cout << "  -mp  --matepair indicate a mate-pair read simulation" << endl;
+-	cout << "  -M  --cigarM    indicate to use CIGAR 'M' instead of '=/X' for alignment match/mismatch" << endl;
+-	cout << "  -nf  --maskN    the cutoff frequency of 'N' in a window size of the read length for masking genomic regions"<<endl;
+-       	cout << "                  NOTE: default: '-nf 1' to mask all regions with 'N'. Use '-nf 0' to turn off masking" <<endl;
+-	cout << "  -na  --noALN    do not output ALN alignment file" << endl;
+-	cout << "  -o   --out      the prefix of output filename" << endl;
+-	cout << "  -p   --paired   indicate a paired-end read simulation or to generate reads from both ends of amplicons" << endl;
+-       	cout << "                  NOTE: art will automatically switch to a mate-pair simulation if the given mean fragment size >= 2000"<<endl;
+-	cout << "  -q   --quiet    turn off end of run summary" << endl;
+-	cout << "  -qL  --minQ     the minimum base quality score" << endl;
+-	cout << "  -qU  --maxQ     the maxiumum base quality score" << endl;
+-	cout << "  -qs  --qShift   the amount to shift every first-read quality score by " << endl;
+-	cout << "  -qs2 --qShift2  the amount to shift every second-read quality score by" << endl;
+-       	cout << "                  NOTE: For -qs/-qs2 option, a positive number will shift up quality scores (the max is 93) " <<endl;
+-       	cout << "                  that reduce substitution sequencing errors and a negative number will shift down " <<endl;
+-       	cout << "                  quality scores that increase sequencing errors. If shifting scores by x, the error"<<endl;
+-       	cout << "                  rate will be 1/(10^(x/10)) of the default profile." <<endl;
+-//	cout << "  -qo  --qOrig    indicate to output the original quality scores regardless the original scores were shifted or not" << endl;
+-	cout << "  -rs  --rndSeed  the seed for random number generator (default: system time in second)"  << endl;
+-       	cout << "                  NOTE: using a fixed seed to generate two identical datasets from different runs"<<endl;
+-	cout << "  -s   --sdev     the standard deviation of DNA/RNA fragment size for paired-end simulations." << endl;
+-	cout << "  -sam --samout   indicate to generate SAM alignment file" << endl;
+-	cout << "  -sp  --sepProf  indicate to use separate quality profiles for different bases (ATGC)" << endl;
+-	cout << "  -ss  --seqSys   The name of Illumina sequencing system of the built-in profile used for simulation" << endl;
+-       	cout << "       NOTE: sequencing system ID names are:"<<endl;
+-        cout << "            GA1 - GenomeAnalyzer I (36bp,44bp), GA2 - GenomeAnalyzer II (50bp, 75bp)"<<endl;
+-	cout << "           HS10 - HiSeq 1000 (100bp),          HS20 - HiSeq 2000 (100bp),      HS25 - HiSeq 2500 (125bp, 150bp)"<<endl;
+-	cout << "           HSXn - HiSeqX PCR free (150bp),     HSXt - HiSeqX TruSeq (150bp),   MinS - MiniSeq TruSeq (50bp)"<<endl;
+-	cout << "           MSv1 - MiSeq v1 (250bp),            MSv3 - MiSeq v3 (250bp),        NS50 - NextSeq500 v2 (75bp)"<<endl;
+-
+-	cout << "===== NOTES ====="<< endl<< endl;
+-	cout << "* ART by default selects a built-in quality score profile according to the read length specified for the run." << endl << endl;
+-	cout << "* For single-end simulation, ART requires input sequence file, output file prefix, read length, and read count/fold coverage." << endl << endl;;
+-//	cout << "  Example: art --in reference_DNA.fa --out sim1 --len 35 --fcov 2 -sam" << endl << endl;;
+-	cout << "* For paired-end simulation (except for amplicon sequencing), ART also requires the parameter values of" << endl;
+-	cout << "  the mean and standard deviation of DNA/RNA fragment lengths" << endl << endl;
+-//	cout << "  Example: art --paired --in reference_DNA.fa --out sim2 --len 35 --fcov 2 --mflen 200 --sdev 3.5 -sam" << endl << endl;
+-
+-	cout << "===== EXAMPLES ====="<< endl <<endl;
+-	cout << " 1) single-end read simulation" <<endl;
+-	cout << " 	art_illumina -ss HS25 -sam -i reference.fa -l 150 -f 10 -o single_dat" <<endl<<endl;
+-	cout << " 2) paired-end read simulation" <<endl;
+-	cout << "       art_illumina -ss HS25 -sam -i reference.fa -p -l 150 -f 20 -m 200 -s 10 -o paired_dat" <<endl<<endl;
+-	cout << " 3) mate-pair read simulation" <<endl;
+-	cout << "       art_illumina -ss HS10 -sam -i reference.fa -mp -l 100 -f 20 -m 2500 -s 50 -o matepair_dat" <<endl<<endl;
+-	cout << " 4) amplicon sequencing simulation with 5' end single-end reads " <<endl;
+-	cout << " 	art_illumina -ss GA2 -amp -sam -na -i amp_reference.fa -l 50 -f 10 -o amplicon_5end_dat" <<endl<<endl;
+-	cout << " 5) amplicon sequencing simulation with paired-end reads" <<endl;
+-	cout << "       art_illumina -ss GA2 -amp -p -sam -na -i amp_reference.fa -l 50 -f 10 -o amplicon_pair_dat" <<endl<<endl;
+-	cout << " 6) amplicon sequencing simulation with matepair reads" <<endl;
+-	cout << "       art_illumina -ss MSv1 -amp -mp -sam -na -i amp_reference.fa -l 150 -f 10 -o amplicon_mate_dat" <<endl<<endl;
+-	cout << " 7) generate an extra SAM file with zero-sequencing errors for a paired-end read simulation" <<endl;
+-	cout << "       art_illumina -ss HSXn -ef -i reference.fa -p -l 150 -f 20 -m 200 -s 10 -o paired_twosam_dat" <<endl<<endl;
+-	cout << " 8) reduce the substitution error rate to one 10th of the default profile"<<endl;
+-       	cout << "       art_illumina -i reference.fa -qs 10 -qs2 10 -l 50 -f 10 -p -m 500 -s 10 -sam -o reduce_error"<<endl<<endl;
+-	cout << " 9) turn off the masking of genomic regions with unknown nucleotides 'N'"<<endl;
+-	cout << "       art_illumina -ss HS20 -nf 0  -sam -i reference.fa -p -l 100 -f 20 -m 200 -s 10 -o paired_nomask" <<endl<<endl;
+-	cout << " 10) masking genomic regions with >=5 'N's within the read length 50"<<endl;
+-	cout << "       art_illumina -ss HSXt -nf 5 -sam -i reference.fa -p -l 150 -f 20 -m 200 -s 10 -o paired_maskN5" <<endl<<endl;
++	MSG << "===== USAGE ====="<<endl << endl;
++	MSG << "art_illumina [options] -ss <sequencing_system> -sam -i <seq_ref_file> -l <read_length> -f <fold_coverage> -o <outfile_prefix>"<<endl;
++	MSG << "art_illumina [options] -ss <sequencing_system> -sam -i <seq_ref_file> -l <read_length> -c <num_reads_per_sequence> -o <outfile_prefix>"<<endl;
++	MSG << "art_illumina [options] -ss <sequencing_system> -sam -i <seq_ref_file> -l <read_length> -f <fold_coverage> -m <mean_fragsize> -s <std_fragsize> -o <outfile_prefix>"<<endl;
++	MSG << "art_illumina [options] -ss <sequencing_system> -sam -i <seq_ref_file> -l <read_length> -c <num_reads_per_sequence> -m <mean_fragsize> -s <std_fragsize> -o <outfile_prefix>"<<endl<<endl;
++	MSG << "===== PARAMETERS =====" << endl << endl;
++	MSG << "  -1   --qprof1   the first-read quality profile" << endl;
++	MSG << "  -2   --qprof2   the second-read quality profile" << endl;
++	MSG << "  -amp --amplicon amplicon sequencing simulation" << endl;
++	MSG << "  -c   --rcount   number of reads/read pairs to be generated per sequence/amplicon (not be used together with -f/--fcov)" << endl;
++	MSG << "  -d   --id       the prefix identification tag for read ID" << endl;
++	MSG << "  -ef  --errfree  indicate to generate the zero sequencing errors SAM file as well the regular one" << endl;
++       	MSG << "                  NOTE: the reads in the zero-error SAM file have the same alignment positions"<<endl;
++       	MSG << "                  as those in the regular SAM file, but have no sequencing errors"<<endl;
++	MSG << "  -f   --fcov     the fold of read coverage to be simulated or number of reads/read pairs generated for each amplicon" << endl;
++	MSG << "  -h   --help     print out usage information"<<endl;
++	MSG << "  -i   --in       the filename of input DNA/RNA reference" << endl;
++	MSG << "  -ir  --insRate  the first-read insertion rate (default: 0.00009)"<< endl;
++	MSG << "  -ir2 --insRate2 the second-read insertion rate (default: 0.00015)" << endl;
++	MSG << "  -dr  --delRate  the first-read deletion rate (default:  0.00011)" << endl;
++	MSG << "  -dr2 --delRate2 the second-read deletion rate (default: 0.00023)" << endl;
++	MSG << "  -k   --maxIndel the maximum total number of insertion and deletion per read (default: up to read length)" << endl;
++	MSG << "  -l   --len      the length of reads to be simulated" << endl;
++	MSG << "  -m   --mflen    the mean size of DNA/RNA fragments for paired-end simulations" << endl;
++	MSG << "  -mp  --matepair indicate a mate-pair read simulation" << endl;
++	MSG << "  -M  --cigarM    indicate to use CIGAR 'M' instead of '=/X' for alignment match/mismatch" << endl;
++	MSG << "  -nf  --maskN    the cutoff frequency of 'N' in a window size of the read length for masking genomic regions"<<endl;
++       	MSG << "                  NOTE: default: '-nf 1' to mask all regions with 'N'. Use '-nf 0' to turn off masking" <<endl;
++	MSG << "  -na  --noALN    do not output ALN alignment file" << endl;
++	MSG << "  -o   --out      the prefix of output filename" << endl;
++	MSG << "  -p   --paired   indicate a paired-end read simulation or to generate reads from both ends of amplicons" << endl;
++       	MSG << "                  NOTE: art will automatically switch to a mate-pair simulation if the given mean fragment size >= 2000"<<endl;
++	MSG << "  -q   --quiet    turn off end of run summary" << endl;
++	MSG << "  -qL  --minQ     the minimum base quality score" << endl;
++	MSG << "  -qU  --maxQ     the maxiumum base quality score" << endl;
++	MSG << "  -qs  --qShift   the amount to shift every first-read quality score by " << endl;
++	MSG << "  -qs2 --qShift2  the amount to shift every second-read quality score by" << endl;
++       	MSG << "                  NOTE: For -qs/-qs2 option, a positive number will shift up quality scores (the max is 93) " <<endl;
++       	MSG << "                  that reduce substitution sequencing errors and a negative number will shift down " <<endl;
++       	MSG << "                  quality scores that increase sequencing errors. If shifting scores by x, the error"<<endl;
++       	MSG << "                  rate will be 1/(10^(x/10)) of the default profile." <<endl;
++//	MSG << "  -qo  --qOrig    indicate to output the original quality scores regardless the original scores were shifted or not" << endl;
++	MSG << "  -rs  --rndSeed  the seed for random number generator (default: system time in second)"  << endl;
++       	MSG << "                  NOTE: using a fixed seed to generate two identical datasets from different runs"<<endl;
++       	MSG << "                  The generator is built in and reproduces the same stream on every platform."<<endl;
++	MSG << "  -gz  --gzip     gzip-compress the FASTQ/ALN/SAM output (adds a .gz suffix)" << endl;
++	MSG << "  -gzl --gzipLevel  gzip compression level 1-9 (default: 6; implies -gz)" << endl;
++	MSG << "       --fq1 <f>  write the first-read FASTQ to <f> instead of <prefix>1.fq" << endl;
++	MSG << "       --fq2 <f>  write the second-read FASTQ to <f> instead of <prefix>2.fq" << endl;
++	MSG << "       --aln1 <f> write the first-read ALN to <f>" << endl;
++	MSG << "       --aln2 <f> write the second-read ALN to <f>" << endl;
++	MSG << "       --samFile <f>  write the SAM output to <f> (implies -sam)" << endl;
++       	MSG << "                  NOTE: -i and the output options above accept, besides a filename:"<<endl;
++       	MSG << "                        '-' (stdin for -i, stdout for outputs), '/dev/stdin', '/dev/stdout',"<<endl;
++       	MSG << "                        '/dev/fd/N' or 'fd:N' for an inherited file descriptor."<<endl;
++       	MSG << "                        A '.gz' name is compressed automatically; gzipped input is"<<endl;
++       	MSG << "                        detected and decompressed automatically."<<endl;
++       	MSG << "                        When reads go to stdout, this summary is written to stderr."<<endl;
++	MSG << "  -s   --sdev     the standard deviation of DNA/RNA fragment size for paired-end simulations." << endl;
++	MSG << "  -sam --samout   indicate to generate SAM alignment file" << endl;
++	MSG << "  -sp  --sepProf  indicate to use separate quality profiles for different bases (ATGC)" << endl;
++	MSG << "  -ss  --seqSys   The name of Illumina sequencing system of the built-in profile used for simulation" << endl;
++       	MSG << "       NOTE: sequencing system ID names are:"<<endl;
++        MSG << "            GA1 - GenomeAnalyzer I (36bp,44bp), GA2 - GenomeAnalyzer II (50bp, 75bp)"<<endl;
++	MSG << "           HS10 - HiSeq 1000 (100bp),          HS20 - HiSeq 2000 (100bp),      HS25 - HiSeq 2500 (125bp, 150bp)"<<endl;
++	MSG << "           HSXn - HiSeqX PCR free (150bp),     HSXt - HiSeqX TruSeq (150bp),   MinS - MiniSeq TruSeq (50bp)"<<endl;
++	MSG << "           MSv1 - MiSeq v1 (250bp),            MSv3 - MiSeq v3 (250bp),        NS50 - NextSeq500 v2 (75bp)"<<endl;
++
++	MSG << "===== NOTES ====="<< endl<< endl;
++	MSG << "* ART by default selects a built-in quality score profile according to the read length specified for the run." << endl << endl;
++	MSG << "* For single-end simulation, ART requires input sequence file, output file prefix, read length, and read count/fold coverage." << endl << endl;;
++//	MSG << "  Example: art --in reference_DNA.fa --out sim1 --len 35 --fcov 2 -sam" << endl << endl;;
++	MSG << "* For paired-end simulation (except for amplicon sequencing), ART also requires the parameter values of" << endl;
++	MSG << "  the mean and standard deviation of DNA/RNA fragment lengths" << endl << endl;
++//	MSG << "  Example: art --paired --in reference_DNA.fa --out sim2 --len 35 --fcov 2 --mflen 200 --sdev 3.5 -sam" << endl << endl;
++
++	MSG << "===== EXAMPLES ====="<< endl <<endl;
++	MSG << " 1) single-end read simulation" <<endl;
++	MSG << " 	art_illumina -ss HS25 -sam -i reference.fa -l 150 -f 10 -o single_dat" <<endl<<endl;
++	MSG << " 2) paired-end read simulation" <<endl;
++	MSG << "       art_illumina -ss HS25 -sam -i reference.fa -p -l 150 -f 20 -m 200 -s 10 -o paired_dat" <<endl<<endl;
++	MSG << " 3) mate-pair read simulation" <<endl;
++	MSG << "       art_illumina -ss HS10 -sam -i reference.fa -mp -l 100 -f 20 -m 2500 -s 50 -o matepair_dat" <<endl<<endl;
++	MSG << " 4) amplicon sequencing simulation with 5' end single-end reads " <<endl;
++	MSG << " 	art_illumina -ss GA2 -amp -sam -na -i amp_reference.fa -l 50 -f 10 -o amplicon_5end_dat" <<endl<<endl;
++	MSG << " 5) amplicon sequencing simulation with paired-end reads" <<endl;
++	MSG << "       art_illumina -ss GA2 -amp -p -sam -na -i amp_reference.fa -l 50 -f 10 -o amplicon_pair_dat" <<endl<<endl;
++	MSG << " 6) amplicon sequencing simulation with matepair reads" <<endl;
++	MSG << "       art_illumina -ss MSv1 -amp -mp -sam -na -i amp_reference.fa -l 150 -f 10 -o amplicon_mate_dat" <<endl<<endl;
++	MSG << " 7) generate an extra SAM file with zero-sequencing errors for a paired-end read simulation" <<endl;
++	MSG << "       art_illumina -ss HSXn -ef -i reference.fa -p -l 150 -f 20 -m 200 -s 10 -o paired_twosam_dat" <<endl<<endl;
++	MSG << " 8) reduce the substitution error rate to one 10th of the default profile"<<endl;
++       	MSG << "       art_illumina -i reference.fa -qs 10 -qs2 10 -l 50 -f 10 -p -m 500 -s 10 -sam -o reduce_error"<<endl<<endl;
++	MSG << " 9) turn off the masking of genomic regions with unknown nucleotides 'N'"<<endl;
++	MSG << "       art_illumina -ss HS20 -nf 0  -sam -i reference.fa -p -l 100 -f 20 -m 200 -s 10 -o paired_nomask" <<endl<<endl;
++	MSG << " 10) masking genomic regions with >=5 'N's within the read length 50"<<endl;
++	MSG << "       art_illumina -ss HSXt -nf 5 -sam -i reference.fa -p -l 150 -f 20 -m 200 -s 10 -o paired_maskN5" <<endl<<endl;
+ 
+ 	exit(1);
+     }
+@@ -413,36 +515,58 @@
+ 		exit(1);
+     }
+     if(!fixed_seed){
+-	    rand_seed=(unsigned int) time(NULL); 
++	    rand_seed=(unsigned int) time(NULL);
+     }
+-    srand (rand_seed);
++    art_srand (rand_seed);
+ 
++    // Destinations.  The -o prefix supplies the defaults; --fq1/--fq2/--aln1/
++    // --aln2/--samFile override any of them individually and accept "-",
++    // "/dev/fd/N" or "fd:N" so the run can be piped instead of written to disk.
++    string gz_sfx = gzip_out ? ".gz" : "";
+ //    string seqfasta=out_file_prefix+num+".fa";
+ //    string qualfasta=out_file_prefix+num+".qual";
+-    string alnfasta=out_file_prefix+num+".aln";
+-    string fqfile=out_file_prefix+num+".fq";
++    string alnfasta=out_file_prefix+num+".aln"+gz_sfx;
++    string fqfile=out_file_prefix+num+".fq"+gz_sfx;
++    string samfile=out_file_prefix+".sam"+gz_sfx;
++    string samfile_ef=out_file_prefix+"_errFree.sam"+gz_sfx;
++
++    if(!fq1_arg.empty())  fqfile=fq1_arg;
++    if(!aln1_arg.empty()) alnfasta=aln1_arg;
++    if(!sam_arg.empty())  samfile=sam_arg;
++
++    if(is_stdout_target(out_file_prefix) && fq1_arg.empty()){
++	    if(is_pairend_read){
++		    cerr << "Fatal Error: '-o -' cannot carry both reads of a pair on stdout;"
++		         << " use --fq1/--fq2 to name each destination." << endl;
++		    exit(1);
++	    }
++	    fqfile="-";
++	    if(!no_ALN){
++		    cerr << "Fatal Error: with '-o -' the ALN output has no destination; add -na or use --aln1." << endl;
++		    exit(1);
++	    }
++	    if(sam_out && sam_arg.empty()){
++		    cerr << "Fatal Error: with '-o -' the SAM output has no destination; use --samFile." << endl;
++		    exit(1);
++	    }
++    }
+ 
+-    string samfile=out_file_prefix+".sam";
+-    ofstream SAMFILE;
+-    string samfile_ef=out_file_prefix+"_errFree.sam";
+-    ofstream SAMFILE_EF;
++    ArtOStream SAMFILE;
++    ArtOStream SAMFILE_EF;
+     if(sam_out) {
+-	    SAMFILE.open(samfile.c_str(),ios::binary); 
+-	    if(!SAMFILE.is_open()) { cerr<<"Can not open output file: "<<samfile<<endl; exit(0); }
++	    if(!SAMFILE.open(samfile, gzip_out, gzip_level)) { cerr<<"Can not open output file: "<<samfile<<endl; exit(0); }
+ 	    if(err_free_sam){
+-		    SAMFILE_EF.open(samfile_ef.c_str(),ios::binary); 
+-		    if(!SAMFILE_EF.is_open()) { cerr<<"Can not open output file: "<<samfile_ef<<endl; exit(0); }
++		    if(!SAMFILE_EF.open(samfile_ef, gzip_out, gzip_level)) { cerr<<"Can not open output file: "<<samfile_ef<<endl; exit(0); }
+ 	    }
+     }
+ 
+-    ofstream FQFILE(fqfile.c_str(),ios::binary);
+-    if(!FQFILE.is_open()) { cerr<<"Can not open output file: "<<fqfile<<endl; exit(0); }
+-	ofstream ALNFILE;	
++    ArtOStream FQFILE;
++    if(!FQFILE.open(fqfile, gzip_out, gzip_level)) { cerr<<"Can not open output file: "<<fqfile<<endl; exit(0); }
++	ArtOStream ALNFILE;
+ 	if (!no_ALN) {
+-	       	ALNFILE.open(alnfasta.c_str(),ios::binary);
+-	       	if(!ALNFILE.is_open()) { cerr<<"Can not open output file: "<<alnfasta<<endl; exit(0); }
+-	       	ALNFILE<<"##ART_Illumina\tread_length\t"<<read_len<<endl;
+-	}	
++	       	if(!ALNFILE.open(alnfasta, gzip_out, gzip_level)) { cerr<<"Can not open output file: "<<alnfasta<<endl; exit(0); }
++	       	ALNFILE<<"##ART_Illumina\tread_length\t"<<read_len<<'\n';
++	}
+     empdist::set_err_prob();
+     empdist qdist;
+ 
+@@ -452,7 +576,7 @@
+     else {
+ 	    qdist.setdist(qual_file1, qual_file2, sep_flag, read_len);
+ 	    if (!seqsys.empty()){
+-		    cout<<"Warnning: ART ignores the specified sequencing system as a customized quality profile provided.";
++		    MSG <<"Warnning: ART ignores the specified sequencing system as a customized quality profile provided.";
+ 	    }
+     }
+ 
+@@ -599,8 +723,25 @@
+ 		    }
+ 	    }
+    }
++    // Flatten the (possibly score-shifted) profiles into the arrays the
++    // per-base lookup searches.
++    qdist.finalize();
++
+     samHeader sH;
+-    sH.getRefseqID(seq_file);
++    // Building @SQ lines means reading the whole reference a second time.
++    // Only the ALN and SAM headers need it, so skip that pass when neither is
++    // requested -- with -na and no -sam it was pure overhead, and it made
++    // streaming from a pipe impossible.
++    bool need_ref_header = sam_out || !no_ALN;
++    if(need_ref_header){
++	    if(art_is_fd_spec(seq_file, false)){
++		    cerr << "Fatal Error: the ALN/SAM header needs a second pass over the reference,"
++		         << " which is not possible when reading from a pipe. Use -na without -sam,"
++		         << " or pass a regular file to -i." << endl;
++		    exit(1);
++	    }
++	    sH.getRefseqID(seq_file);
++    }
+     sH.ID="01";
+     sH.PN="ART_Illumina"; 
+     for(int i=0;i < argc; ++i) { sH.CL.append(argv[i]);sH.CL.append(" "); }
+@@ -633,7 +774,7 @@
+     a_read.set_rate(read_len, delRate, a_read.del_rate, maxNumIndel);
+ //    void set_rate(int read_len, double p, vector <double>& rate, int max_num=0, double cdf_cutoff=0.999999){
+     string aln_read,aln_ref;
+-    ostringstream osID;
++    string fq_rec; // reused scratch buffer for one formatted FASTQ record
+     int num_seq=0;
+     string read_id;
+ //    string seqfasta2="";
+@@ -647,21 +788,17 @@
+ 
+ //        seqfasta2=out_file_prefix+"2.fa";
+ //        qualfasta2=out_file_prefix+"2.qual";
+-        alnfasta2=out_file_prefix+"2.aln";
+-        fqfile2=out_file_prefix+"2.fq";
+-//        ofstream SEQFILE2(seqfasta2.c_str(),ios::binary);
+-//        if(!SEQFILE2.is_open()) { cout<<"can not open output file: "<<seqfasta2<<endl; exit(0); }
+-
+-//        ofstream QUALFILE2(qualfasta2.c_str(),ios::binary);
+-//        if(!QUALFILE2.is_open()) { cout<<"can not open output file: "<<qualfasta2<<endl; exit(0); }
+-
+-        ofstream FQFILE2(fqfile2.c_str(),ios::binary);
+-        if(!FQFILE2.is_open()) { cerr<<"Can not open output file: "<<fqfile2<<endl; exit(0); }
+-       	ofstream ALNFILE2;
++        alnfasta2=out_file_prefix+"2.aln"+gz_sfx;
++        fqfile2=out_file_prefix+"2.fq"+gz_sfx;
++        if(!fq2_arg.empty())  fqfile2=fq2_arg;
++        if(!aln2_arg.empty()) alnfasta2=aln2_arg;
++
++        ArtOStream FQFILE2;
++        if(!FQFILE2.open(fqfile2, gzip_out, gzip_level)) { cerr<<"Can not open output file: "<<fqfile2<<endl; exit(0); }
++       	ArtOStream ALNFILE2;
+        	if (!no_ALN) {
+-	       	ALNFILE2.open(alnfasta2.c_str(),ios::binary);
+-	       	if(!ALNFILE2.is_open()) { cerr<<"Can not open output file: "<<alnfasta2<<endl; exit(0); }
+-	       	ALNFILE2<<"##ART_Illumina\tread_length\t"<<read_len<<endl;
++	       	if(!ALNFILE2.open(alnfasta2, gzip_out, gzip_level)) { cerr<<"Can not open output file: "<<alnfasta2<<endl; exit(0); }
++	       	ALNFILE2<<"##ART_Illumina\tread_length\t"<<read_len<<'\n';
+ 	       	sH.printAlnHeader(ALNFILE2);
+        	}
+ 
+@@ -679,7 +816,7 @@
+         while(seq_reader.next_seq(id,a_art.ref_seq)){ 
+ 	    std::replace(a_art.ref_seq.begin(), a_art.ref_seq.end(), 'U', 'T'); //replace U with T
+ //            size_t p1=id.find_first_of(' '); if(p1==string::npos) p1=10; size_t p2=id.find_first_of('\t'); if(p2==string::npos) p2=10;            p1=p1<p2?p1:p2; id=id.substr(0,p1); 
+-            istringstream isID; isID.str(id); isID>>id; id=id.substr(0,len_ref_id); 
++            keep_first_token(id); if(id.size()>(size_t)len_ref_id) id.resize(len_ref_id);
+             num_seq++;
+             a_art.ini_set(read_len);
+             if(mask_n){ 
+@@ -696,9 +833,10 @@
+ 	    }
+             while(t_num_read>0){
+ //              osID<<num_seq<<fixed<<setfill('0')<< setw(10)<< t_num_read;
+-                osID<<id<<'-'<<suffID<<t_num_read;
+-                read_id = osID.str();
+-                osID.str("");
++                read_id = id;
++                read_id += '-';
++                read_id += suffID;
++                append_long(read_id, t_num_read);
+                 a_read.clear();
+                 a_read_2.clear();
+                 //a_art.next_read(a_read);
+@@ -715,17 +853,17 @@
+ 			cerr<<"Warning: the reference sequence "<<id<< " (length "<<a_art.ref_seq.size()<<"bps ) is skipped as it < the defined read length ("<< read_len<<" bps)"<<endl;
+ 			break;
+ 		}
+-                if(mask_n){ 
++                if(mask_n){
+                   if(a_read.is_plus_strand){
+                     size_t bpos2=a_art.ref_seq.size()-a_read_2.bpos-read_len;
+-                    if(a_art.masked_pos.count(a_read.bpos)>0 || a_art.masked_pos.count(bpos2)>0){
++                    if(a_art.is_masked(a_read.bpos) || a_art.is_masked(bpos2)){
+                       t_num_read-=2;
+                       continue;
+                     }
+                   }
+                   else{
+                     size_t bpos1=a_art.ref_seq.size()-a_read.bpos-read_len;
+-                    if(a_art.masked_pos.count(bpos1)>0 || a_art.masked_pos.count(a_read_2.bpos)>0){
++                    if(a_art.is_masked(bpos1) || a_art.is_masked(a_read_2.bpos)){
+                       t_num_read-=2;
+                       continue;
+                     }
+@@ -749,11 +887,8 @@
+                 read_id_2=read_id+"/2";
+                 read_id+="/1";
+ 
+-                FQFILE<<"@"<<read_id<<endl<<a_read.seq_read<<endl<<"+"<<endl;
+-                for(size_t k=0; k<qual.size(); k++){
+-                    FQFILE<<(char)(qual[k]+33);
+-                }
+-                FQFILE<<endl;
++                format_fastq(fq_rec, read_id, a_read.seq_read, qual);
++                FQFILE.write(fq_rec.data(), fq_rec.size());
+ 
+ 		if(! a_read.get_aln(aln_read,aln_ref)){
+ 		       	aln_ref=a_read.seq_ref;
+@@ -763,14 +898,11 @@
+ 		       	ALNFILE<<">"<<id<<"\t"<<read_id<<"-1\t"<<a_read.bpos;
+ 		       	if(a_read.is_plus_strand) ALNFILE<<"\t+\n";
+ 		       	else ALNFILE<<"\t-\n";
+-		       	ALNFILE<<aln_ref<<endl<<aln_read<<endl;
++		       	ALNFILE<<aln_ref<<'\n'<<aln_read<<'\n';
+ 	       	}
+ 
+-                FQFILE2<<"@"<<read_id_2<<endl<<a_read_2.seq_read<<endl<<"+"<<endl;
+-                for(size_t k=0; k<qual_2.size(); k++){
+-                    FQFILE2<<(char)(qual_2[k]+33);
+-                }
+-                FQFILE2<<endl;
++                format_fastq(fq_rec, read_id_2, a_read_2.seq_read, qual_2);
++                FQFILE2.write(fq_rec.data(), fq_rec.size());
+ 	       	if(! a_read_2.get_aln(aln_read_2,aln_ref_2)){
+ 		       	aln_ref_2=a_read_2.seq_ref;
+ 		       	aln_read_2=a_read_2.seq_read;
+@@ -779,7 +911,7 @@
+ 			ALNFILE2<<">"<<id<<"\t"<<read_id_2<<"\t"<<a_read_2.bpos;
+ 		       	if(a_read_2.is_plus_strand) ALNFILE2<<"\t+\n";
+ 		       	else ALNFILE2<<"\t-\n";
+-		       	ALNFILE2<<aln_ref_2<<endl<<aln_read_2<<endl;
++		       	ALNFILE2<<aln_ref_2<<'\n'<<aln_read_2<<'\n';
+ 	       	}
+ 
+ 		if(sam_out){
+@@ -863,7 +995,7 @@
+     else{
+         while(seq_reader.next_seq(id,a_art.ref_seq)){
+ 	    std::replace(a_art.ref_seq.begin(), a_art.ref_seq.end(), 'U', 'T'); //replace U with T
+-            istringstream isID; isID.str(id); isID>>id; id=id.substr(0,len_ref_id); 
++            keep_first_token(id); if(id.size()>(size_t)len_ref_id) id.resize(len_ref_id);
+             num_seq++;
+             a_art.ini_set(read_len);
+             long t_num_read= 0;
+@@ -878,9 +1010,10 @@
+               a_art.mask_n_region(max_num_n);
+             }
+             while(t_num_read>0){
+-                osID<<id<<'-'<<suffID<<t_num_read;
+-                read_id = osID.str();
+-                osID.str("");
++                read_id = id;
++                read_id += '-';
++                read_id += suffID;
++                append_long(read_id, t_num_read);
+                 a_read.clear();
+ 		if(amplicon){
+ 			a_art.next_ampread_indel(a_read);
+@@ -888,16 +1021,16 @@
+ 		else{ 
+ 			a_art.next_read_indel(a_read);
+ 		}
+-                if(mask_n){ 
++                if(mask_n){
+                   if(a_read.is_plus_strand){
+-                    if(a_art.masked_pos.count(a_read.bpos)>0){
++                    if(a_art.is_masked(a_read.bpos)){
+                       t_num_read-=1;
+                       continue;
+                     }
+                   }
+                   else{
+                     size_t bpos=a_art.ref_seq.size()-a_read.bpos-read_len;
+-                    if(a_art.masked_pos.count(bpos)>0){
++                    if(a_art.is_masked(bpos)){
+                       t_num_read-=1;
+                       continue;
+                     }
+@@ -913,11 +1046,8 @@
+ 	       	}
+                 a_read.add_error(qual);
+ 
+-                FQFILE<<"@"<<read_id<<endl<<a_read.seq_read<<endl<<"+"<<endl;
+-                for(size_t k=0; k<qual.size(); k++){
+-                    FQFILE<<(char)(qual[k]+33);
+-                }
+-                FQFILE<<endl;
++                format_fastq(fq_rec, read_id, a_read.seq_read, qual);
++                FQFILE.write(fq_rec.data(), fq_rec.size());
+ 	       	if(! a_read.get_aln(aln_read,aln_ref)){
+ 		       	aln_ref=a_read.seq_ref;
+ 		       	aln_read=a_read.seq_read;
+@@ -927,7 +1057,7 @@
+ 		       	if(a_read.is_plus_strand) ALNFILE<<"\t+\n";
+ 		       	else ALNFILE<<"\t-\n";
+ 
+-		       	ALNFILE<<aln_ref<<endl<<aln_read<<endl;
++		       	ALNFILE<<aln_ref<<'\n'<<aln_read<<'\n';
+ 	       	}
+ 
+ 		if(sam_out){
+@@ -978,125 +1108,125 @@
+ 
+     if(!is_pairend_read){
+ 	if(amplicon){
+-	       	cout << "              Amplicon 5'-end sequencing simulation" << endl << endl;
++	       	MSG << "              Amplicon 5'-end sequencing simulation" << endl << endl;
+ 	}
+ 	else{
+-	       	cout << "                  Single-end Simulation" << endl << endl;
++	       	MSG << "                  Single-end Simulation" << endl << endl;
+ 	}
+     } else if(is_matepair) {
+ 	if(amplicon){
+-	       	cout << "             Amplicon matepair sequencing simulation" << endl << endl;
++	       	MSG << "             Amplicon matepair sequencing simulation" << endl << endl;
+ 	}
+ 	else{
+-	       	cout << "                  Matepair-end sequencing simulation" << endl << endl;
++	       	MSG << "                  Matepair-end sequencing simulation" << endl << endl;
+ 	}
+     } else {
+ 	if(amplicon){
+-	       	cout << "             Amplicon paired-end sequencing simulation" << endl << endl;
++	       	MSG << "             Amplicon paired-end sequencing simulation" << endl << endl;
+ 	}
+ 	else{
+-	       	cout << "                  Paired-end sequencing simulation" << endl << endl;
++	       	MSG << "                  Paired-end sequencing simulation" << endl << endl;
+ 	}
+     }
+ 
+     end = clock();
+     cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+-    cout<< "Total CPU time used: "<< cpu_time_used<<endl<<endl;
+-    cout<< "The random seed for the run: "<< rand_seed<<endl<<endl;
++    MSG << "Total CPU time used: "<< cpu_time_used<<endl<<endl;
++    MSG << "The random seed for the run: "<< rand_seed<<endl<<endl;
+ 
+     if(!show_flag){
+ 
+-	cout << "Parameters used during run" << endl; 
+-	cout << "\tRead Length:\t" << read_len << endl;
++	MSG << "Parameters used during run" << endl; 
++	MSG << "\tRead Length:\t" << read_len << endl;
+ 	if(mask_n){
+-	       	cout << "\tGenome masking 'N' cutoff frequency: \t" <<max_num_n<<" in "<< read_len<<endl;
++	       	MSG << "\tGenome masking 'N' cutoff frequency: \t" <<max_num_n<<" in "<< read_len<<endl;
+ 	}
+ 	else{
+-	       	cout << "\t'N' genomic regions masking turned off"<< endl;
++	       	MSG << "\t'N' genomic regions masking turned off"<< endl;
+ 	}
+        	if (amplicon){
+ 	       	if(is_pairend_read)
+-		       	cout << "\t# Read Pairs per Amplion:  " << x_fold << endl;
++		       	MSG << "\t# Read Pairs per Amplion:  " << x_fold << endl;
+ 	       	else 
+-			cout << "\t# Reads per Amplion:       " << x_fold << endl;
++			MSG << "\t# Reads per Amplion:       " << x_fold << endl;
+        	}
+        	else{
+-	       	cout << "\tFold Coverage:            " << x_fold << "X" << endl;
++	       	MSG << "\tFold Coverage:            " << x_fold << "X" << endl;
+        	}
+ 	if(is_pairend_read && !amplicon){
+-	    cout << "\tMean Fragment Length:     " << mean << endl;
+-	    cout << "\tStandard Deviation:       " << std_dev << endl;
++	    MSG << "\tMean Fragment Length:     " << mean << endl;
++	    MSG << "\tStandard Deviation:       " << std_dev << endl;
+ 	}
+ 	if(rate_flag){
+-            cout << "\tFirst Insertion Rate:     " << insRate << endl;
+-	    cout << "\tSecond Insertion Rate:    " << insRate2 << endl;
+-	    cout << "\tFirst Deletion Rate:      " << delRate << endl;
+-	    cout << "\tSecond Deletion Rate:     " << delRate2 << endl;
++            MSG << "\tFirst Insertion Rate:     " << insRate << endl;
++	    MSG << "\tSecond Insertion Rate:    " << insRate2 << endl;
++	    MSG << "\tFirst Deletion Rate:      " << delRate << endl;
++	    MSG << "\tSecond Deletion Rate:     " << delRate2 << endl;
+ 	}
+ 	if(qs_flag){
+-	    cout << "\tFirst quality shift:      " << q_shift_up << endl;
+-	    cout << "\tSecond quality shift:     " << q_shift_up_2 << endl;
++	    MSG << "\tFirst quality shift:      " << q_shift_up << endl;
++	    MSG << "\tSecond quality shift:     " << q_shift_up_2 << endl;
+ 	}
+ 	if(!sep_flag){
+-	    cout << "\tProfile Type:             Combined" << endl;
++	    MSG << "\tProfile Type:             Combined" << endl;
+ 	} else {
+-	    cout << "\tProfile Type:             Separated" << endl;
++	    MSG << "\tProfile Type:             Separated" << endl;
+ 	}
+-	cout << "\tID Tag:                   " << suffID.c_str() << endl << endl;;
+-	cout << "Quality Profile(s)" << endl; 
++	MSG << "\tID Tag:                   " << suffID.c_str() << endl << endl;;
++	MSG << "Quality Profile(s)" << endl; 
+ 
+ 	if(is_pairend_read){
+ 	    if(first_qual){
+-		cout << "\tFirst Read:   " << qual_file1.c_str() <<" (user's profile)" << endl;
++		MSG << "\tFirst Read:   " << qual_file1.c_str() <<" (user's profile)" << endl;
+ 	    } else if(!qdist.ssystem.empty()){
+-		cout << "\tFirst Read:   " <<qdist.ssystem<<" Length "<< profile_size <<" R1"<<" (built-in profile) "<<endl;
++		MSG << "\tFirst Read:   " <<qdist.ssystem<<" Length "<< profile_size <<" R1"<<" (built-in profile) "<<endl;
+ 	    } else {
+-		cout << "\tFirst Read:   " <<" EMP" << profile_size <<"R1"<<" (built-in profile) "<<endl;
++		MSG << "\tFirst Read:   " <<" EMP" << profile_size <<"R1"<<" (built-in profile) "<<endl;
+ 	    }
+ 	    if(second_qual){
+-		cout << "\tSecond Read:  " << qual_file2.c_str()<<" (user's profile)"<< endl<< endl;
++		MSG << "\tSecond Read:  " << qual_file2.c_str()<<" (user's profile)"<< endl<< endl;
+ 	    } else if(!qdist.ssystem.empty()){
+-		cout << "\tFirst Read:   " <<qdist.ssystem<<" Length "<< profile_size <<" R2"<<" (built-in profile) "<<endl<<endl;
++		MSG << "\tFirst Read:   " <<qdist.ssystem<<" Length "<< profile_size <<" R2"<<" (built-in profile) "<<endl<<endl;
+ 	    } else {
+-		cout << "\tSecond Read:  " <<" EMP" << profile_size_2 <<"R2"<<" (built-in profile) "<<endl<<endl;
++		MSG << "\tSecond Read:  " <<" EMP" << profile_size_2 <<"R2"<<" (built-in profile) "<<endl<<endl;
+ 	    }
+ 	} else {
+ 	    if(first_qual){
+-		cout << "\t" << qual_file1.c_str()<<" (user's profile)"<< endl << endl;
++		MSG << "\t" << qual_file1.c_str()<<" (user's profile)"<< endl << endl;
+ 	    } else if(!qdist.ssystem.empty()){
+-		cout << "\tFirst Read:   " <<qdist.ssystem<<" Length "<< profile_size <<" R1"<<" (built-in profile) "<<endl<<endl;
++		MSG << "\tFirst Read:   " <<qdist.ssystem<<" Length "<< profile_size <<" R1"<<" (built-in profile) "<<endl<<endl;
+ 	    } else {
+-		cout << "\t " <<" EMP" << profile_size <<"R1"<<" (built-in profile) "<<endl<<endl;
++		MSG << "\t " <<" EMP" << profile_size <<"R1"<<" (built-in profile) "<<endl<<endl;
+ 	    }
+ 	}
+ 	
+-	cout << "Output files" << endl << endl;
++	MSG << "Output files" << endl << endl;
+ 
+ 	if(is_pairend_read){
+-	    cout << "  FASTQ Sequence Files:" << endl; 
+-	    cout << "\t the 1st reads: " << fqfile << endl;
+-	    cout << "\t the 2nd reads: " << fqfile2 << endl << endl;
++	    MSG << "  FASTQ Sequence Files:" << endl; 
++	    MSG << "\t the 1st reads: " << fqfile << endl;
++	    MSG << "\t the 2nd reads: " << fqfile2 << endl << endl;
+ 	    if(!no_ALN){
+-		    cout << "  ALN Alignment Files:" << endl; 
+-		    cout << "\t the 1st reads: " << alnfasta << endl;
+-		    cout << "\t the 2nd reads: " << alnfasta2 << endl << endl;;
++		    MSG << "  ALN Alignment Files:" << endl; 
++		    MSG << "\t the 1st reads: " << alnfasta << endl;
++		    MSG << "\t the 2nd reads: " << alnfasta2 << endl << endl;;
+ 	    }
+ 	} else {
+-	    cout << "  FASTQ Sequence File:" << endl; 
+-	    cout << "\t" << fqfile << endl << endl;
++	    MSG << "  FASTQ Sequence File:" << endl; 
++	    MSG << "\t" << fqfile << endl << endl;
+ 	    if (!no_ALN){
+-		    cout << "  ALN Alignment File:" << endl; 
+-		    cout << "\t" << alnfasta << endl << endl;
++		    MSG << "  ALN Alignment File:" << endl; 
++		    MSG << "\t" << alnfasta << endl << endl;
+ 	    }
+ 	}
+ 	if(sam_out){
+-	    cout << "  SAM Alignment File:" << endl; 
+-	    cout << "\t" << samfile << endl << endl;
++	    MSG << "  SAM Alignment File:" << endl; 
++	    MSG << "\t" << samfile << endl << endl;
+ 	}
+ 
+ 	if(err_free_sam){
+-	    cout << "  Error Free SAM Alignment File:" << endl; 
+-	    cout << "\t" << samfile_ef << endl << endl;
++	    MSG << "  Error Free SAM Alignment File:" << endl; 
++	    MSG << "\t" << samfile_ef << endl << endl;
+ 	}
+     }    
+ 
+diff -ruN a/art_illumina_src/artio.cpp b/art_illumina_src/artio.cpp
+--- a/art_illumina_src/artio.cpp	1970-01-01 00:00:00.000000000 +0000
++++ b/art_illumina_src/artio.cpp	2026-08-17 19:59:11.040129742 +0000
+@@ -0,0 +1,184 @@
++/*
++ * artio.cpp -- see artio.h
++ */
++
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <cstddef>
++#include <cerrno>
++#include <iostream>
++#include <unistd.h>
++#include <fcntl.h>
++
++#include "artio.h"
++
++// Buffer big enough that whole FASTQ records are batched into few syscalls.
++static const size_t ART_IO_BUFSIZE = 256 * 1024;
++
++// Parses the descriptor spellings documented in artio.h.  Returns the raw
++// descriptor number, or -1 when `spec` is an ordinary path.
++static int parse_fd_spec(const char* spec, bool for_write) {
++    if (spec == NULL || spec[0] == '\0') return -1;
++
++    if (strcmp(spec, "-") == 0) return for_write ? 1 : 0;
++    if (strcmp(spec, "/dev/stdin") == 0) return 0;
++    if (strcmp(spec, "/dev/stdout") == 0) return 1;
++    if (strcmp(spec, "/dev/stderr") == 0) return 2;
++
++    const char* num = NULL;
++    if (strncmp(spec, "fd:", 3) == 0) num = spec + 3;
++    else if (strncmp(spec, "/dev/fd/", 8) == 0) num = spec + 8;
++    else if (strncmp(spec, "/proc/self/fd/", 14) == 0) num = spec + 14;
++    if (num == NULL || *num == '\0') return -1;
++
++    char* endp = NULL;
++    long v = strtol(num, &endp, 10);
++    if (endp == num || *endp != '\0' || v < 0 || v > 1000000) return -1;
++    return (int)v;
++}
++
++int art_fd_spec_number(const char* spec, bool for_write) {
++    return parse_fd_spec(spec, for_write);
++}
++
++bool art_is_fd_spec(const char* spec, bool for_write) {
++    return parse_fd_spec(spec, for_write) >= 0;
++}
++
++int art_resolve_fd(const char* spec, bool for_write) {
++    int fd = parse_fd_spec(spec, for_write);
++    if (fd < 0) return -1;
++    // Duplicate so that closing our handle leaves the caller's fd alone.
++    int dup_fd = dup(fd);
++    if (dup_fd < 0) {
++        cerr << "Fatal Error: cannot use file descriptor " << fd << ": " << strerror(errno) << endl;
++        exit(1);
++    }
++    return dup_fd;
++}
++
++bool art_has_gz_suffix(const string& path) {
++    return path.size() > 3 && path.compare(path.size() - 3, 3, ".gz") == 0;
++}
++
++gzFile art_gzopen_read(const char* spec) {
++    int fd = art_resolve_fd(spec, false);
++    if (fd >= 0) return gzdopen(fd, "rb");
++    return gzopen(spec, "rb");
++}
++
++ArtOutBuf::ArtOutBuf()
++    : buf_(NULL), bufsize_(ART_IO_BUFSIZE), fd_(-1), gz_(NULL), failed_(false) {
++    buf_ = new char[bufsize_];
++    setp(buf_, buf_ + bufsize_ - 1);
++}
++
++ArtOutBuf::~ArtOutBuf() {
++    close();
++    delete[] buf_;
++}
++
++bool ArtOutBuf::open(const char* spec, bool compress, int level) {
++    close();
++    failed_ = false;
++
++    if (!compress && art_has_gz_suffix(spec)) compress = true;
++    if (level < 1) level = 1;
++    if (level > 9) level = 9;
++
++    int fd = art_resolve_fd(spec, true);
++
++    if (compress) {
++        char mode[8];
++        snprintf(mode, sizeof(mode), "wb%d", level);
++        gz_ = (fd >= 0) ? gzdopen(fd, mode) : gzopen(spec, mode);
++        if (gz_ == NULL) {
++            if (fd >= 0) ::close(fd);
++            return false;
++        }
++        // zlib's own buffer on top of ours; larger chunks compress faster.
++        gzbuffer(gz_, 128 * 1024);
++        return true;
++    }
++
++    if (fd < 0) {
++        fd = ::open(spec, O_WRONLY | O_CREAT | O_TRUNC, 0666);
++        if (fd < 0) return false;
++    }
++    fd_ = fd;
++    return true;
++}
++
++void ArtOutBuf::close() {
++    if (!is_open()) return;
++    flush_buffer();
++    if (gz_ != NULL) {
++        gzclose(gz_);
++        gz_ = NULL;
++    }
++    if (fd_ >= 0) {
++        ::close(fd_);
++        fd_ = -1;
++    }
++}
++
++bool ArtOutBuf::raw_write(const char* data, size_t n) {
++    if (n == 0) return true;
++    if (failed_) return false;
++
++    if (gz_ != NULL) {
++        // gzwrite takes an unsigned int; our buffer is far below that limit.
++        if (gzwrite(gz_, data, (unsigned)n) != (int)n) {
++            failed_ = true;
++            return false;
++        }
++        return true;
++    }
++
++    size_t off = 0;
++    while (off < n) {
++        ssize_t w = ::write(fd_, data + off, n - off);
++        if (w < 0) {
++            if (errno == EINTR) continue;
++            failed_ = true;
++            return false;
++        }
++        off += (size_t)w;
++    }
++    return true;
++}
++
++bool ArtOutBuf::flush_buffer() {
++    ptrdiff_t n = pptr() - pbase();
++    if (n <= 0) return true;
++    bool ok = raw_write(pbase(), (size_t)n);
++    setp(buf_, buf_ + bufsize_ - 1);
++    return ok;
++}
++
++int ArtOutBuf::overflow(int c) {
++    if (c != EOF) {
++        *pptr() = (char)c;
++        pbump(1);
++    }
++    return flush_buffer() ? c : EOF;
++}
++
++// Bypasses the buffer for large blocks so long sequences are not copied twice.
++streamsize ArtOutBuf::xsputn(const char* s, streamsize n) {
++    if (n <= 0) return 0;
++    if ((size_t)n < bufsize_ / 2) {
++        streamsize room = epptr() - pptr();
++        if (n > room && !flush_buffer()) return 0;
++        memcpy(pptr(), s, (size_t)n);
++        pbump((int)n);
++        return n;
++    }
++    if (!flush_buffer()) return 0;
++    return raw_write(s, (size_t)n) ? n : 0;
++}
++
++int ArtOutBuf::sync() {
++    return flush_buffer() ? 0 : -1;
++}
+diff -ruN a/art_illumina_src/artio.h b/art_illumina_src/artio.h
+--- a/art_illumina_src/artio.h	1970-01-01 00:00:00.000000000 +0000
++++ b/art_illumina_src/artio.h	2026-08-17 19:59:11.040129742 +0000
+@@ -0,0 +1,96 @@
++/*
++ * artio.h -- I/O helpers for ART: transparent gzip, and stdin/stdout/file
++ * descriptor targets so art_illumina can sit in the middle of a pipeline.
++ *
++ * Both readers and writers accept, in place of an ordinary path:
++ *
++ *   "-"            stdin for input, stdout for output
++ *   "/dev/stdin", "/dev/stdout", "/dev/stderr"
++ *   "/dev/fd/N"    file descriptor N
++ *   "fd:N"         file descriptor N (portable spelling of the above)
++ *
++ * Input is decompressed transparently: zlib's gzread() passes uncompressed
++ * data through untouched, so a plain and a gzipped FASTA are handled by the
++ * same code path with no sniffing on our side.
++ *
++ * Output is compressed when the caller asks for it, or automatically when the
++ * destination path ends in ".gz".
++ */
++
++#pragma once
++
++#include <zlib.h>
++#include <ostream>
++#include <streambuf>
++#include <string>
++
++using namespace std;
++
++// The descriptor `spec` refers to, or -1 when `spec` is an ordinary path.
++int art_fd_spec_number(const char* spec, bool for_write);
++
++// True when `spec` names a file descriptor rather than an ordinary path.
++bool art_is_fd_spec(const char* spec, bool for_write);
++
++// If `spec` names a file descriptor rather than a path, returns a *duplicate*
++// of that descriptor (so closing it later never clobbers the caller's).
++// Returns -1 when `spec` is an ordinary path.
++int art_resolve_fd(const char* spec, bool for_write);
++
++// True when the destination should be gzip-compressed based on its name.
++bool art_has_gz_suffix(const string& path);
++
++// Opens `spec` for reading, transparently handling gzip, plain files, and the
++// descriptor spellings above. Returns NULL on failure.
++gzFile art_gzopen_read(const char* spec);
++
++/*
++ * A streambuf that writes to either a raw file descriptor or a gzFile, with a
++ * large buffer so a run does not turn into one write() per line.  Presented as
++ * a std::ostream so all the existing `<<` code keeps working unchanged.
++ */
++class ArtOutBuf : public streambuf {
++public:
++    ArtOutBuf();
++    ~ArtOutBuf();
++
++    // `compress` forces gzip; otherwise it is inferred from a ".gz" suffix.
++    // Returns false if the destination could not be opened.
++    bool open(const char* spec, bool compress, int level);
++    bool is_open() const { return fd_ >= 0 || gz_ != NULL; }
++    void close();
++
++protected:
++    virtual int overflow(int c);
++    virtual streamsize xsputn(const char* s, streamsize n);
++    virtual int sync();
++
++private:
++    bool flush_buffer();
++    bool raw_write(const char* data, size_t n);
++
++    char* buf_;
++    size_t bufsize_;
++    int fd_;
++    gzFile gz_;
++    bool failed_;
++};
++
++class ArtOStream : public ostream {
++public:
++    ArtOStream() : ostream(&buf_) {}
++    ~ArtOStream() { close(); }
++
++    bool open(const string& spec, bool compress = false, int level = 6) {
++        if (!buf_.open(spec.c_str(), compress, level)) {
++            setstate(ios::failbit);
++            return false;
++        }
++        return true;
++    }
++    bool is_open() const { return buf_.is_open(); }
++    void close() { flush(); buf_.close(); }
++
++private:
++    ArtOutBuf buf_;
++};
+diff -ruN a/art_illumina_src/artrand.h b/art_illumina_src/artrand.h
+--- a/art_illumina_src/artrand.h	1970-01-01 00:00:00.000000000 +0000
++++ b/art_illumina_src/artrand.h	2026-08-17 19:59:11.040129742 +0000
+@@ -0,0 +1,90 @@
++/*
++ * artrand.h -- reproducible replacement for srand()/rand() in ART.
++ *
++ * ART draws every random number through r_prob() == rand()/(double)RAND_MAX.
++ * Relying on the C library has two problems for a simulator:
++ *
++ *   1) rand() is only reproducible within one libc.  The same seed gives
++ *      different reads on glibc and on macOS, so a "fixed seed" run is not
++ *      actually reproducible across machines.
++ *   2) glibc's rand() takes an internal lock on every call, which is pure
++ *      overhead here and shows up in profiles.
++ *
++ * This header reimplements glibc's TYPE_3 random() (the additive-feedback
++ * generator behind rand() on Linux) as a header-only, lock-free generator.
++ * It produces bit-identical output to glibc rand() for any seed, so results
++ * from the stock ART are preserved, while also making runs reproducible on
++ * platforms whose libc uses a different algorithm.
++ *
++ * Algorithm (glibc stdlib/random_r.c, TYPE_3: DEG=31, SEP=3):
++ *   state r[0..30] seeded with the minimal-standard LCG 16807 (Schrage's
++ *   method), front tap at index 3, rear tap at index 0, then repeatedly
++ *   r[f] += r[rear]; output = (uint32_t)r[f] >> 1.  The first 310 outputs
++ *   are discarded.
++ */
++
++#pragma once
++
++#include <stdint.h>
++
++#define ART_RAND_MAX 2147483647
++
++namespace artrand_detail {
++    // Function-local statics keep this header-only, with no .cpp to link and
++    // no duplicate-symbol problems across translation units.
++    struct State {
++        int32_t r[31];
++        int f;     // front tap (i-3)
++        int rear;  // rear tap  (i-31)
++    };
++    inline State& state() {
++        static State s;
++        return s;
++    }
++}
++
++// Equivalent to glibc rand(): returns a value in [0, ART_RAND_MAX].
++inline int art_rand() {
++    artrand_detail::State& s = artrand_detail::state();
++    s.r[s.f] = (int32_t)((uint32_t)s.r[s.f] + (uint32_t)s.r[s.rear]);
++    int result = (int)((uint32_t)s.r[s.f] >> 1);
++    if (++s.f >= 31) s.f = 0;
++    if (++s.rear >= 31) s.rear = 0;
++    return result;
++}
++
++// Matches glibc srand(): a zero seed behaves like a seed of 1.
++inline void art_srand(unsigned int seed) {
++    artrand_detail::State& s = artrand_detail::state();
++    s.r[0] = (seed == 0) ? 1 : (int32_t)seed;
++    for (int i = 1; i < 31; i++) {
++        // r[i] = (16807 * r[i-1]) % 2147483647, computed without overflow
++        // exactly as glibc does it.
++        int32_t prev = s.r[i - 1];
++        int32_t hi = prev / 127773;
++        int32_t lo = prev % 127773;
++        int32_t word = 16807 * lo - 2836 * hi;
++        if (word < 0) word += 2147483647;
++        s.r[i] = word;
++    }
++    s.f = 3;
++    s.rear = 0;
++    for (int i = 0; i < 310; i++) art_rand();
++}
++
++/*
++ * floor() and ceil() are ordinary libm calls on baseline x86-64, because the
++ * single-instruction form (roundsd) needs SSE4.1 and is not in the default
++ * target.  ART puts one of them on the result of nearly every random draw, so
++ * the call overhead is significant.  For non-negative arguments these are
++ * exactly equivalent -- truncation toward zero is floor -- and compile to a
++ * couple of instructions.  Do not use them where the argument can be negative.
++ */
++inline double art_floor_nonneg(double v) {
++    return (double)(long long)v;
++}
++
++inline double art_ceil_nonneg(double v) {
++    long long t = (long long)v;
++    return (v > (double)t) ? (double)(t + 1) : (double)t;
++}
+diff -ruN a/art_illumina_src/empdist.cpp b/art_illumina_src/empdist.cpp
+--- a/art_illumina_src/empdist.cpp	2016-06-06 02:33:07.000000000 +0000
++++ b/art_illumina_src/empdist.cpp	2026-08-17 19:59:11.040129742 +0000
+@@ -262,115 +262,161 @@
+    return true;
+ }
+ 
++// Index of the breakpoint map::lower_bound(cc) would have returned.
++static size_t dist_index(const vector<qualPoint>& v, unsigned int cc){
++    size_t idx=0;
++    for(size_t k=0; k<v.size(); k++) idx += (v[k].cum < cc);
++    if(idx>=v.size()) idx=v.size()-1;
++    return idx;
++}
++
++// Flattens one map-based distribution into a sorted array plus its bucket table.
++static void flatten_dist(const vector< map <unsigned int, unsigned short> >& src, qualDistVec& dst){
++    dst.clear();
++    dst.resize(src.size());
++    const unsigned int nbucket=(empdist::max_dist_number>>QUAL_LUT_SHIFT)+2;
++    for(size_t i=0; i<src.size(); i++){
++        vector<qualPoint>& pts=dst[i].pts;
++        pts.reserve(src[i].size());
++        for(map<unsigned int, unsigned short>::const_iterator it=src[i].begin(); it!=src[i].end(); ++it){
++            qualPoint p;
++            p.cum=it->first;
++            p.qual=it->second;
++            pts.push_back(p);
++        }
++        // qual_lookup() indexes both arrays unconditionally, so a position with
++        // no breakpoints (only reachable from a malformed profile) gets a
++        // single catch-all entry rather than leaving them empty.
++        if(pts.empty()){
++            qualPoint p;
++            p.cum=empdist::max_dist_number;
++            p.qual=0;
++            pts.push_back(p);
++        }
++
++        dst[i].lut.assign(nbucket, QUAL_LUT_NONE);
++        for(unsigned int b=0; b<nbucket; b++){
++            unsigned int lo=b<<QUAL_LUT_SHIFT;
++            unsigned int hi=lo+(1u<<QUAL_LUT_SHIFT)-1;
++            size_t i_lo=dist_index(pts, lo);
++            size_t i_hi=dist_index(pts, hi);
++            // Same breakpoint at both ends => same for everything between.
++            if(i_lo==i_hi && pts[i_lo].qual<QUAL_LUT_NONE){
++                dst[i].lut[b]=(unsigned char)pts[i_lo].qual;
++            }
++        }
++    }
++}
++
++// Must be called after the profiles are loaded and any -qs/-qs2 shift applied.
++void empdist::finalize(){
++    flatten_dist(qual_dist_first,    qual_dist_first_v);
++    flatten_dist(qual_dist_second,   qual_dist_second_v);
++    flatten_dist(a_qual_dist_first,  a_qual_dist_first_v);
++    flatten_dist(a_qual_dist_second, a_qual_dist_second_v);
++    flatten_dist(t_qual_dist_first,  t_qual_dist_first_v);
++    flatten_dist(t_qual_dist_second, t_qual_dist_second_v);
++    flatten_dist(g_qual_dist_first,  g_qual_dist_first_v);
++    flatten_dist(g_qual_dist_second, g_qual_dist_second_v);
++    flatten_dist(c_qual_dist_first,  c_qual_dist_first_v);
++    flatten_dist(c_qual_dist_second, c_qual_dist_second_v);
++}
++
+ //generate quali vector from dist of one read from pair-end [default first read]
+ bool empdist::get_read_qual(vector<short>& read_qual, int len, bool first){
+     if(first){
+-        if(len>(int)qual_dist_first.size()){
+-            cerr<<"Error: Maximum read length allowed is:"<<qual_dist_first.size() << endl; 
++        if(len>(int)qual_dist_first_v.size()){
++            cerr<<"Error: Maximum read length allowed is:"<<qual_dist_first_v.size() << endl;
+             return false;
+         }
+-        return get_read_qual(qual_dist_first, read_qual, len);
++        return get_read_qual(qual_dist_first_v, read_qual, len);
+     }
+     else{
+-        if(len>(int)qual_dist_second.size()){
+-            cerr<<"Error: Maximum length allowed for 2nd read is:"<<qual_dist_first.size() << endl; 
++        if(len>(int)qual_dist_second_v.size()){
++            cerr<<"Error: Maximum length allowed for 2nd read is:"<<qual_dist_first_v.size() << endl;
+             return false;
+         }
+-        return get_read_qual(qual_dist_second, read_qual, len);
++        return get_read_qual(qual_dist_second_v, read_qual, len);
+     }
+ }
+ 
+ //generate quali vector from dist of first read from pair-end
+ bool empdist::get_read_qual(vector<short>& read_qual, bool first){
+     if(first){
+-        return get_read_qual(qual_dist_first, read_qual, (int)qual_dist_first.size());
++        return get_read_qual(qual_dist_first_v, read_qual, (int)qual_dist_first_v.size());
+     }
+     else{
+-        return get_read_qual(qual_dist_second, read_qual, (int)qual_dist_second.size());
++        return get_read_qual(qual_dist_second_v, read_qual, (int)qual_dist_second_v.size());
+     }
+ }
+ 
+-bool empdist::get_read_qual(vector< map <unsigned int, unsigned short> >&qual_dist, vector<short>& read_qual, int len){
++bool empdist::get_read_qual(const qualDistVec& qual_dist, vector<short>& read_qual, int len){
+     if((int)qual_dist.size()<len) return false;
+-    unsigned int cumCC;
+-    map <unsigned int, unsigned short>::iterator it;
++    read_qual.resize(len);
+     for(int i=0; i<len; i++){
+-        cumCC=(unsigned int) ceil(r_prob()*max_dist_number);
+-        it=qual_dist[i].lower_bound(cumCC);
+-        //if(it!=qual_dist[i].end()){
+-        read_qual.push_back(it->second);
+-        //}
++        unsigned int cumCC=(unsigned int) art_ceil_nonneg(r_prob()*max_dist_number);
++        read_qual[i]=(short)qual_lookup(qual_dist[i], cumCC);
+     }
+     return true;
+ }
+ 
+-bool empdist::get_read_qual_1st(string seq, vector<short>& read_qual){
+-    int len=seq.size();
++bool empdist::get_read_qual_1st(const string& seq, vector<short>& read_qual){
++    size_t len=seq.size();
+     if(len==0) return false;
+-    if(a_qual_dist_first.size()<len || t_qual_dist_first.size()<len || g_qual_dist_first.size()<len || c_qual_dist_first.size()<len ){
++    if(a_qual_dist_first_v.size()<len || t_qual_dist_first_v.size()<len || g_qual_dist_first_v.size()<len || c_qual_dist_first_v.size()<len ){
+ 	    cerr<<"Error: The required read length exceeds the length of the read quality profile"<<endl;
+ 	    exit(1);
+     }
+ 
+-    unsigned int cumCC;
+-    map <unsigned int, unsigned short>::iterator it;
+-    for(int i=0; i<len; i++){
+-        cumCC=(unsigned int) ceil(r_prob()*max_dist_number);
++    read_qual.resize(len);
++    for(size_t i=0; i<len; i++){
++        unsigned int cumCC=(unsigned int) art_ceil_nonneg(r_prob()*max_dist_number);
+ 	if(seq[i]=='A'){
+-	       	it=a_qual_dist_first[i].lower_bound(cumCC);
+-	       	read_qual.push_back(it->second);
++	       	read_qual[i]=(short)qual_lookup(a_qual_dist_first_v[i], cumCC);
+ 	}
+ 	else if(seq[i]=='C'){
+-	       	it=c_qual_dist_first[i].lower_bound(cumCC);
+-	       	read_qual.push_back(it->second);
++	       	read_qual[i]=(short)qual_lookup(c_qual_dist_first_v[i], cumCC);
+ 	}
+ 	else if(seq[i]=='G'){
+-	       	it=g_qual_dist_first[i].lower_bound(cumCC);
+-	       	read_qual.push_back(it->second);
++	       	read_qual[i]=(short)qual_lookup(g_qual_dist_first_v[i], cumCC);
+ 	}
+ 	else if(seq[i]=='T'){
+-	       	it=g_qual_dist_first[i].lower_bound(cumCC);
+-	       	read_qual.push_back(it->second);
++	       	read_qual[i]=(short)qual_lookup(g_qual_dist_first_v[i], cumCC);
+ 	}
+ 	else{
+-		//return random quality less than 10 
+-	       	read_qual.push_back((short) r_prob()*10); 
++		//return random quality less than 10
++	       	read_qual[i]=(short) r_prob()*10;
+ 	}
+     }
+     return true;
+ }
+ 
+-bool empdist::get_read_qual_2nd(string seq, vector<short>& read_qual){
+-    int len=seq.size();
++bool empdist::get_read_qual_2nd(const string& seq, vector<short>& read_qual){
++    size_t len=seq.size();
+     if(len==0) return false;
+-    if(a_qual_dist_second.size()<len || t_qual_dist_second.size()<len || g_qual_dist_second.size()<len || c_qual_dist_second.size()<len ){
++    if(a_qual_dist_second_v.size()<len || t_qual_dist_second_v.size()<len || g_qual_dist_second_v.size()<len || c_qual_dist_second_v.size()<len ){
+ 	    cerr<<"Error: The required read length exceeds the length of the read quality profile"<<endl;
+ 	    exit(1);
+     }
+ 
+-    unsigned int cumCC;
+-    map <unsigned int, unsigned short>::iterator it;
+-    for(int i=0; i<len; i++){
+-        cumCC=(unsigned int) ceil(r_prob()*max_dist_number);
++    read_qual.resize(len);
++    for(size_t i=0; i<len; i++){
++        unsigned int cumCC=(unsigned int) art_ceil_nonneg(r_prob()*max_dist_number);
+ 	if(seq[i]=='A'){
+-	       	it=a_qual_dist_second[i].lower_bound(cumCC);
+-	       	read_qual.push_back(it->second);
++	       	read_qual[i]=(short)qual_lookup(a_qual_dist_second_v[i], cumCC);
+ 	}
+ 	else if(seq[i]=='C'){
+-	       	it=c_qual_dist_second[i].lower_bound(cumCC);
+-	       	read_qual.push_back(it->second);
++	       	read_qual[i]=(short)qual_lookup(c_qual_dist_second_v[i], cumCC);
+ 	}
+ 	else if(seq[i]=='G'){
+-	       	it=g_qual_dist_second[i].lower_bound(cumCC);
+-	       	read_qual.push_back(it->second);
++	       	read_qual[i]=(short)qual_lookup(g_qual_dist_second_v[i], cumCC);
+ 	}
+ 	else if(seq[i]=='T'){
+-	       	it=g_qual_dist_second[i].lower_bound(cumCC);
+-	       	read_qual.push_back(it->second);
++	       	read_qual[i]=(short)qual_lookup(g_qual_dist_second_v[i], cumCC);
+ 	}
+ 	else{
+-		//return random quality less than 10 
+-	       	read_qual.push_back((short) r_prob()*10); 
++		//return random quality less than 10
++	       	read_qual[i]=(short) r_prob()*10;
+ 	}
+     }
+     return true;
+diff -ruN a/art_illumina_src/empdist.h b/art_illumina_src/empdist.h
+--- a/art_illumina_src/empdist.h	2016-06-06 02:33:07.000000000 +0000
++++ b/art_illumina_src/empdist.h	2026-08-17 19:59:11.046129730 +0000
+@@ -11,6 +11,7 @@
+ #include <map>
+ #include <cmath>
+ 
++#include "artrand.h"
+ 
+ #define HIGHEST_QUAL 80
+ 
+@@ -50,7 +51,53 @@
+ using namespace std;
+ 
+ inline double r_prob(){
+-    return rand()/(double)RAND_MAX;
++    return art_rand()/(double)ART_RAND_MAX;
++};
++
++// One point of a cumulative quality-score distribution.
++struct qualPoint{
++    unsigned int cum;
++    unsigned short qual;
++};
++
++/*
++ * Drawing one quality score per base is the hottest loop in ART: a 150bp
++ * paired-end run does two lookups per base.  The distributions themselves are
++ * built into std::map (which gives sorting and de-duplication for free) and
++ * then flattened here.
++ *
++ * The lookup answers "first breakpoint with cum >= cc", exactly what
++ * map::lower_bound returned.  Searching for it -- by tree walk or by binary
++ * search -- costs a handful of unpredictable branches per base.  Instead the
++ * [0, max_dist_number] range is cut into fixed 1024-wide buckets: a bucket
++ * whose two ends resolve to the same breakpoint resolves to that breakpoint
++ * throughout (the answer is monotone in cc), so its score can be read straight
++ * out of a byte table.  Only buckets straddling a breakpoint need a scan, and
++ * a profile has a few dozen breakpoints against ~1000 buckets.
++ */
++#define QUAL_LUT_SHIFT 10
++#define QUAL_LUT_NONE  255   // bucket straddles a breakpoint: scan `pts`
++
++struct qualDist{
++    vector<qualPoint> pts;        // exact, sorted breakpoints
++    vector<unsigned char> lut;    // per-bucket answer, or QUAL_LUT_NONE
++};
++typedef vector<qualDist> qualDistVec;
++
++// Linear fallback: branchless, and the arrays are only tens of entries long.
++inline unsigned short qual_scan(const vector<qualPoint>& v, unsigned int cc){
++    size_t idx=0, n=v.size();
++    for(size_t k=0; k<n; k++) idx += (v[k].cum < cc);
++    // The last key is the distribution maximum, so idx is in range; the clamp
++    // only guards against rounding in a malformed profile.
++    if(idx>=n) idx=n-1;
++    return v[idx].qual;
++};
++
++inline unsigned short qual_lookup(const qualDist& d, unsigned int cc){
++    unsigned char q=d.lut[cc>>QUAL_LUT_SHIFT];
++    if(q!=QUAL_LUT_NONE) return q;
++    return qual_scan(d.pts, cc);
+ };
+ 
+ class empdist{
+@@ -73,8 +120,8 @@
+ 
+     bool get_read_qual(vector<short>& read_qual, bool first=true);
+     bool get_read_qual(vector<short>& read_qual, int len, bool first=true);
+-    bool get_read_qual_1st(string seq, vector<short>& read_qual);
+-    bool get_read_qual_2nd(string seq, vector<short>& read_qual);
++    bool get_read_qual_1st(const string& seq, vector<short>& read_qual);
++    bool get_read_qual_2nd(const string& seq, vector<short>& read_qual);
+     //TODO
+     //bool read_conti_dist(); 
+     ~empdist();
+@@ -92,10 +139,20 @@
+     vector< map <unsigned int, unsigned short> > g_qual_dist_second;
+     vector< map <unsigned int, unsigned short> > c_qual_dist_second;
+ 
++    // Flattened, search-ready copies of the maps above.  Call finalize() once
++    // the maps are fully built (including any -qs/-qs2 score shifting).
++    qualDistVec qual_dist_first_v;
++    qualDistVec qual_dist_second_v;
++    qualDistVec a_qual_dist_first_v,  a_qual_dist_second_v;
++    qualDistVec t_qual_dist_first_v,  t_qual_dist_second_v;
++    qualDistVec g_qual_dist_first_v,  g_qual_dist_second_v;
++    qualDistVec c_qual_dist_first_v,  c_qual_dist_second_v;
++    void finalize();
++
+     map<unsigned int, unsigned int> fragment_length;
+     int get_ran_flagment_len(){
+         if(fragment_length.size()==0) return -1;
+-        int cc=(int) ceil(r_prob()*max_dist_number);
++        int cc=(int) art_ceil_nonneg(r_prob()*max_dist_number);
+         map<unsigned int, unsigned int>::iterator it=fragment_length.lower_bound(cc);
+         if(it==fragment_length.end()) return -1;
+         return it->second; 
+@@ -103,7 +160,7 @@
+ private:
+     //int max_len_pair_first;
+     //int max_len_pair_second;
+-    bool get_read_qual(vector< map <unsigned int, unsigned short> >&qual_dist, vector<short>& read_qual, int len);
++    bool get_read_qual(const qualDistVec& qual_dist, vector<short>& read_qual, int len);
+ 
+     string machinetype;
+     string comb_sym;
+diff -ruN a/art_illumina_src/readSeqFile.cpp b/art_illumina_src/readSeqFile.cpp
+--- a/art_illumina_src/readSeqFile.cpp	2016-06-06 02:33:07.000000000 +0000
++++ b/art_illumina_src/readSeqFile.cpp	2026-08-17 19:59:11.049129724 +0000
+@@ -1,8 +1,8 @@
+ /*
+  * >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+- * ART -- Artificial Read Transcription, Illumina Q version 
++ * ART -- Artificial Read Transcription, Illumina Q version
+  * Authors: Weichun Huang 2008-2016
+- * License: GPL v3 
++ * License: GPL v3
+  * ############################################################################
+  * #    This program is free software: you can redistribute it and/or modify  #
+  * #    it under the terms of the GNU General Public License as published by  #
+@@ -22,132 +22,156 @@
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+-#include <time.h>
+-#include <math.h>
+-#include <string>
+-#include <vector>
+-#include <algorithm>
+-#include <functional>
++#include <string.h>
+ #include <iostream>
+-#include <fstream>
+-#include <sstream>
+ 
+ using namespace std;
+ 
+-
+ #include "readSeqFile.h"
++#include "artio.h"
++
++static const size_t READ_BUF_SIZE = 256 * 1024;
++
++readSeqFile::readSeqFile()
++    : fileName(""), fp(NULL), bpos(0), blen(0), at_eof(true), seekable(false){
++}
+ 
+-readSeqFile::readSeqFile(){
+-    fileName = (char*) "";
++readSeqFile::readSeqFile(const char* file_name)
++    : fileName(file_name ? file_name : ""), fp(NULL), bpos(0), blen(0), at_eof(true), seekable(false){
++    open_file(file_name);
+ }
+-readSeqFile::readSeqFile(char* file_name){
+-    fileName = file_name;
+-    infile.open(fileName);
+-    if(! infile.is_open()){
++
++void readSeqFile::open_file(const char* file_name){
++    fp = art_gzopen_read(file_name);
++    if(fp == NULL){
+         cerr<<"the file: "<<file_name<<" can not be opened"<<endl;
+         exit(0);
+     }
++    buf.resize(READ_BUF_SIZE);
++    bpos = 0;
++    blen = 0;
++    at_eof = false;
++    // Descriptor sources (pipes, stdin) cannot be rewound.
++    seekable = !art_is_fd_spec(file_name, false);
+ }
+ 
+ readSeqFile::~readSeqFile(){
+-    if(infile.is_open()){
+-        infile.close();
++    if(fp != NULL){
++        gzclose(fp);
++        fp = NULL;
++    }
++}
++
++bool readSeqFile::fill(){
++    if(at_eof) return false;
++    int n = gzread(fp, &buf[0], (unsigned)buf.size());
++    if(n <= 0){
++        at_eof = true;
++        blen = 0;
++        bpos = 0;
++        return false;
++    }
++    blen = (size_t)n;
++    bpos = 0;
++    return true;
++}
++
++// Consumes input up to and including the next '>'.  Returns false at EOF.
++bool readSeqFile::skip_to_header(){
++    for(;;){
++        if(bpos >= blen && !fill()) return false;
++        void* gt = memchr(&buf[bpos], '>', blen - bpos);
++        if(gt != NULL){
++            bpos = (size_t)((char*)gt - &buf[0]) + 1;
++            return true;
++        }
++        bpos = blen;
++    }
++}
++
++bool readSeqFile::read_line(string& line){
++    line.clear();
++    bool got_any = false;
++    for(;;){
++        if(bpos >= blen && !fill()) return got_any;
++        got_any = true;
++        // Copy the whole run up to the newline in one go.
++        void* nl = memchr(&buf[bpos], '\n', blen - bpos);
++        if(nl != NULL){
++            size_t idx = (size_t)((char*)nl - &buf[0]);
++            line.append(&buf[bpos], idx - bpos);
++            bpos = idx + 1;
++            return true;
++        }
++        line.append(&buf[bpos], blen - bpos);
++        bpos = blen;
+     }
+ }
+ 
+-//read next num_next seq in fast format 
++//read next num_next seq in fast format
+ int readSeqFile::next_seq(vector<string>& nextid, vector<string>& nextseq, int num_next)
+ {
+-    if(!infile.is_open()){
+-        cerr<<"There is not open file"<<endl;
+-        return 0;
+-    }
+-    string geneID="";
+-    string geneSEQ="",tmpString="";
+-    char tempChar;
++    string id, seq;
+     int numSeq=0;
+-    while(!infile.eof() && numSeq<num_next){
+-        tempChar = 'a'; 
+-        while(tempChar!='>' && !infile.eof() ){
+-            infile.get(tempChar);
+-        }
+-        if(tempChar!='>'){
+-            continue;
+-        }
+-        getline(infile,geneID);	
+-        if(geneID.length()<1){
+-            continue;
+-        }
+-        while((!infile.eof()) && (infile.peek()!='>')){ 
+-            tmpString.clear();
+-            getline(infile,tmpString);
+-	    if ((tmpString.size() > 0) && (tmpString[tmpString.size() - 1] == '\r')){ tmpString.resize(tmpString.size() - 1); }
+-            geneSEQ.append(tmpString);
+-        }
+-        nextseq.push_back(geneSEQ);
+-        nextid.push_back(geneID);
+-        geneSEQ.clear();
+-        geneID.clear();
++    while(numSeq<num_next && next_seq(id,seq)){
++        nextseq.push_back(seq);
++        nextid.push_back(id);
+         numSeq++;
+     }
+-    return numSeq;	
++    return numSeq;
+ }
+ 
+ int readSeqFile::next_seq(vector<string>& nextid,vector<string>& nextseq)
+ {
+     return next_seq(nextid, nextseq,1);
+ }
++
+ //read in one seq
+ int readSeqFile::next_seq(string& geneID,string& geneSEQ){
+-    if(!infile.is_open()){
++    if(fp == NULL){
+         cerr<<"There is not open file"<<endl;
+         return 0;
+     }
+     geneSEQ.clear();
+-    string tmpString="";
+-    char tempChar;
+-    int numSeq=0;
+-    //stringstream tmpseq;
+-    while(!infile.eof() && numSeq==0){
+-        tempChar = 'a'; //tempChar is not '>'
+-        while(tempChar!='>' && !infile.eof() ){
+-            infile.get(tempChar);
+-        }
+-        if(tempChar!='>'){
+-            continue;
+-        }
+-        getline(infile,geneID);	
++    string tmpString;
++
++    for(;;){
++        // Skip anything before the next record header, matching the original
++        // byte-wise scan for '>' rather than assuming line-aligned input.
++        if(!skip_to_header()) return 0;
++
++        if(!read_line(geneID)) return 0;
+         if(geneID.length()<1){
+             continue;
+         }
+-        while((!infile.eof()) && (infile.peek()!='>')){ 
+-            tmpString.clear();
+-            getline(infile,tmpString);
+-	    if ((tmpString.size() > 0) && (tmpString[tmpString.size() - 1] == '\r')){ tmpString.resize(tmpString.size() - 1); }
+-            geneSEQ.append(tmpString);//v1.1 change from "geneSEQ.append(tmpString)":
++
++        while(peek_byte() >= 0 && peek_byte() != '>'){
++            if(!read_line(tmpString)) break;
++            if((tmpString.size() > 0) && (tmpString[tmpString.size() - 1] == '\r')){ tmpString.resize(tmpString.size() - 1); }
++            geneSEQ.append(tmpString);
+         }
+-        numSeq++;
++        return 1;
+     }
+-    return numSeq;
+ }
+ 
+ //close opened file and open another file
+-bool readSeqFile::reSetFile(char* file_name){
+-    if(infile.is_open()){
+-        infile.close();
+-    }
+-    infile.open(file_name);
+-    if(! infile.is_open()){
+-        cerr<<"the file: "<<file_name<<" can not be opened";
+-        return false;
+-    }
+-    return true;
+-
++bool readSeqFile::reSetFile(const char* file_name){
++    if(fp != NULL){
++        gzclose(fp);
++        fp = NULL;
++    }
++    fileName = file_name ? file_name : "";
++    open_file(file_name);
++    return fp != NULL;
+ }
+ 
+ //set pointer to begining
+ bool readSeqFile::restart(){
+-    infile.clear();
+-    infile.seekg(0, ios::beg);
++    if(fp == NULL) return false;
++    if(!seekable) return false;
++    if(gzrewind(fp) != 0) return false;
++    bpos = 0;
++    blen = 0;
++    at_eof = false;
+     return true;
+ }
+diff -ruN a/art_illumina_src/readSeqFile.h b/art_illumina_src/readSeqFile.h
+--- a/art_illumina_src/readSeqFile.h	2016-06-06 02:33:07.000000000 +0000
++++ b/art_illumina_src/readSeqFile.h	2026-08-17 19:59:11.049129724 +0000
+@@ -1,8 +1,8 @@
+ /*
+  * >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+- * ART -- Artificial Read Transcription, Illumina Q version 
++ * ART -- Artificial Read Transcription, Illumina Q version
+  * Authors: Weichun Huang 2008-2016
+- * License: GPL v3 
++ * License: GPL v3
+  * ############################################################################
+  * #    This program is free software: you can redistribute it and/or modify  #
+  * #    it under the terms of the GNU General Public License as published by  #
+@@ -20,28 +20,57 @@
+  * <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+ */
+ 
++/*
++ * Reads FASTA through zlib, so plain and gzipped references, as well as
++ * stdin/"-"/"fd:N" pipes, all go through one code path.  Parsing works on a
++ * large private buffer rather than istream::get()/peek(), which for the short
++ * amplicon records gargammel produces was a large share of the run time.
++ */
++
+ #pragma once
+ 
++#include <zlib.h>
+ #include <vector>
+-#include <fstream>
+ #include <string>
+ using namespace std;
+ 
+ class readSeqFile{
+   private:
+-      char* fileName;
+-      ifstream infile;
++      string fileName;
++      gzFile fp;
++      vector<char> buf;
++      size_t bpos;      // next unread byte in buf
++      size_t blen;      // valid bytes in buf
++      bool at_eof;
++      bool seekable;    // false for pipes: restart()/re-reading is impossible
++
++      // Refills the buffer; returns false at end of input.
++      bool fill();
++      // Returns the next byte without consuming it, or -1 at end of input.
++      inline int peek_byte(){
++          if(bpos>=blen && !fill()) return -1;
++          return (unsigned char)buf[bpos];
++      }
++      // Reads up to the next '\n' (not stored); returns false at end of input.
++      bool read_line(string& line);
++      // Consumes input up to and including the next '>'; false at end of input.
++      bool skip_to_header();
++
++      void open_file(const char* file_name);
++
+   public:
+-      readSeqFile(char* file_name);
++      readSeqFile(const char* file_name);
+       readSeqFile();
+       ~readSeqFile();
+       //close opened file and open another file
+-      bool reSetFile(char* file_name);
++      bool reSetFile(const char* file_name);
++      // true when the source can be re-read from the beginning
++      bool is_seekable() const { return seekable; }
+   	  //read next num_next seq in fasta format
+       int next_seq(vector<string>& nextid,vector<string>& nextseq, int num_next);
+       int next_seq(vector<string>& nextid,vector<string>& nextseq);
+       int next_seq(string& geneID,string& geneSEQ);
+       //set pointer to begining
+       bool restart();
+- 
++
+ };
+diff -ruN a/art_illumina_src/samRead.cpp b/art_illumina_src/samRead.cpp
+--- a/art_illumina_src/samRead.cpp	2016-06-06 02:33:07.000000000 +0000
++++ b/art_illumina_src/samRead.cpp	2026-08-17 19:59:11.049129724 +0000
+@@ -39,26 +39,26 @@
+ 
+ void samHeader::printHeader(ostream& fout){
+        	if(SN.size()!=LN.size()){
+-	       	cerr<<"fatal error in determining the number of sequences"<<endl;
++	       	cerr<<"fatal error in determining the number of sequences"<<"\n";
+ 	       	exit(1);
+        	}
+-       	fout<<"@HD\t"<<"VN:"<<VN<<"\tSO:"<<SO<<endl;
++       	fout<<"@HD\t"<<"VN:"<<VN<<"\tSO:"<<SO<<"\n";
+        	for(size_t i=0; i<SN.size(); i++){
+-	       	fout<<"@SQ\t"<<"SN:"<<SN[i]<<"\tLN:"<<LN[i]<<endl;
++	       	fout<<"@SQ\t"<<"SN:"<<SN[i]<<"\tLN:"<<LN[i]<<"\n";
+        	}
+-       	fout<<"@PG\t"<<"ID:"<<ID<<"\tPN:"<<PN<<"\tCL:"<<CL<<endl;
++       	fout<<"@PG\t"<<"ID:"<<ID<<"\tPN:"<<PN<<"\tCL:"<<CL<<"\n";
+ }
+ 
+ void samHeader::printAlnHeader(ostream& fout){
+        	if(SN.size()!=LN.size()){
+-	       	cerr<<"fatal error in determining the number of sequences"<<endl;
++	       	cerr<<"fatal error in determining the number of sequences"<<"\n";
+ 	       	exit(1);
+        	}
+-       	fout<<"@CM\t"<<CL<<endl;
++       	fout<<"@CM\t"<<CL<<"\n";
+        	for(size_t i=0; i<SN.size(); i++){
+-	       	fout<<"@SQ\t"<<SN[i]<<"\t"<<LN[i]<<endl;
++	       	fout<<"@SQ\t"<<SN[i]<<"\t"<<LN[i]<<"\n";
+        	}
+-       	fout<<"##Header End"<<endl;
++       	fout<<"##Header End"<<"\n";
+ }
+ 
+ //make sure flag set before call getCigar
+@@ -149,5 +149,5 @@
+ }
+ 
+ void samRead::printRead(ostream& fout){
+-       	fout<<qname<<"\t"<<flag<<"\t"<<rname<<"\t"<<pos<<"\t"<<mapQ<<"\t"<<cigar<<"\t"<<rNext<<"\t"<<pNext<<"\t"<<tLen<<"\t"<<seq<<"\t"<<qual<<endl;
++       	fout<<qname<<"\t"<<flag<<"\t"<<rname<<"\t"<<pos<<"\t"<<mapQ<<"\t"<<cigar<<"\t"<<rNext<<"\t"<<pNext<<"\t"<<tLen<<"\t"<<seq<<"\t"<<qual<<"\n";
+ }
+diff -ruN a/art_illumina_src/seqRead.cpp b/art_illumina_src/seqRead.cpp
+--- a/art_illumina_src/seqRead.cpp	2016-06-06 02:33:07.000000000 +0000
++++ b/art_illumina_src/seqRead.cpp	2026-08-17 19:59:11.049129724 +0000
+@@ -31,7 +31,7 @@
+         if(del_rate[i]>=r_prob()){
+             del_len=i+1;
+             for(int j=i; j>=0;){
+-                int pos=(int) floor((read_len-1)*r_prob()); //invalid deletion positions: 0 or read_len-1
++                int pos=(int) art_floor_nonneg((read_len-1)*r_prob()); //invalid deletion positions: 0 or read_len-1
+                 if(pos==0) continue;
+                 if(indel.count(pos)==0){
+                     indel[pos]='-';
+@@ -49,9 +49,9 @@
+         if(ins_rate[i]>=r_prob()){
+             ins_len=i+1;
+             for(int j=i; j>=0;){
+-                int pos=(int) floor(r_prob()*read_len);
++                int pos=(int) art_floor_nonneg(r_prob()*read_len);
+                 if(indel.count(pos)==0){
+-                    short base=(short)ceil(r_prob()*4);
++                    short base=(short)art_ceil_nonneg(r_prob()*4);
+                     switch(base){
+                                 case 1:
+                                     indel[pos]='A';   break;
+@@ -81,9 +81,9 @@
+         if(ins_rate[i]>=r_prob()){
+             ins_len=i+1;
+             for(int j=i; j>=0;){
+-                int pos=(int) floor(r_prob()*read_len);
++                int pos=(int) art_floor_nonneg(r_prob()*read_len);
+                 if(indel.count(pos)==0){
+-                    short base=(short)ceil(r_prob()*4);
++                    short base=(short)art_ceil_nonneg(r_prob()*4);
+                     switch(base){
+                                 case 1:
+                                     indel[pos]='A';   break;
+@@ -110,7 +110,7 @@
+         if(del_rate[i]>=r_prob()){
+             del_len=i+1;
+             for(int j=i; j>=0;){
+-                int pos=(int) floor((read_len-1)*r_prob()); //invalid deletion positions: 0 or read_len-1
++                int pos=(int) art_floor_nonneg((read_len-1)*r_prob()); //invalid deletion positions: 0 or read_len-1
+                 if(pos==0) continue;
+                 if(indel.count(pos)==0){
+                     indel[pos]='-';
+diff -ruN a/art_illumina_src/seqRead.h b/art_illumina_src/seqRead.h
+--- a/art_illumina_src/seqRead.h	2016-06-06 02:33:07.000000000 +0000
++++ b/art_illumina_src/seqRead.h	2026-08-17 19:59:56.230036912 +0000
+@@ -93,24 +93,35 @@
+ 
+     //when max_num =-1, no limit on the number of indels 
+     //the maxium number of indels is set by cdf_cutoff to save computation time 
++    //get_indel() reads this table from the top down and, at index i, places
++    //i+1 indels when the draw falls below rate[i].  Index i must therefore hold
++    //P(X >= i+1) = gsl_cdf_binomial_Q(i, p, read_len), the probability of
++    //needing at least i+1 of them.
++    //
++    //The loop used to start at i=1, so rate[i] held P(X >= i+2): placing one
++    //indel was gated on the probability of needing two.  The i=0 term was
++    //computed into tp, used to seed the cutoff accumulator, then overwritten
++    //without ever being stored.  Since P(X >= 2) is smaller than P(X >= 1) by
++    //roughly the per-base rate, the realized indel rate came out some two
++    //hundred times below the -ir/-dr asked for: at the defaults, 0.003% of
++    //reads carried an indel rather than the ~1.5% implied by the parameters.
+     void set_rate(int read_len, double p, vector <double>& rate, int max_num=-1, double cdf_cutoff=0.999999){
+         rate.clear();
+        	if(max_num==0) return;
+ 	//p ==0 no error
+ 	if(p<0.000000000000000000000000000001) return; //when rate < 10^-30, set it 0
+-	double tp=gsl_cdf_binomial_Q(0, p, read_len);
+-	double p_cdf=tp;
+-        for(size_t i=1;i<read_len;i++){
+-	    tp=gsl_cdf_binomial_Q(i, p, read_len);
++	double p_cdf=0;
++        for(size_t i=0;i<read_len;i++){
++	    double tp=gsl_cdf_binomial_Q(i, p, read_len);
+             rate.push_back(tp);
+-	    if(max_num>0 && (i>=max_num)) break;
+-	    p_cdf+=tp; 
++	    if(max_num>0 && ((int)i+1>=max_num)) break;
++	    p_cdf+=tp;
+ 	    if(p_cdf>=cdf_cutoff) break;
+         }
+     };
+ 
+     static char rand_base(){
+-        short base=(short)ceil(r_prob()*4);
++        short base=(short)art_ceil_nonneg(r_prob()*4);
+         switch(base){
+             case 1:
+                 return 'A';
+@@ -310,7 +321,7 @@
+             if(sub_rate[i]>=r_prob()){
+                 sub_num=i+1;
+                 for(int j=i; j>=0;){
+-                    int pos=(int) floor(read_len*r_prob());
++                    int pos=(int) art_floor_nonneg(read_len*r_prob());
+                     if(substitution.count(pos)==0){
+                         char achar=seq_read[pos];
+                         while(seq_read[pos]==achar){ achar=rand_base(); }
+diff -ruN a/configure.ac b/configure.ac
+--- a/configure.ac	2016-06-06 02:33:07.000000000 +0000
++++ b/configure.ac	2026-08-17 19:59:11.056129709 +0000
+@@ -12,6 +12,8 @@
+ AC_CHECK_LIB(m,main)
+ AC_CHECK_LIB(gslcblas,main,,AC_MSG_ERROR([gslcblas not found]))
+ AC_CHECK_LIB(gsl,main,,AC_MSG_ERROR([gsl library not found]))
++# zlib: transparent gzip input/output in art_illumina
++AC_CHECK_LIB(z,gzopen,,AC_MSG_ERROR([zlib not found]))
+ AC_PROG_MAKE_SET
+ 
+ # Checks for typedefs, structures, and compiler characteristics.
+diff -ruN a/Makefile.am b/Makefile.am
+--- a/Makefile.am	2016-06-06 02:33:07.000000000 +0000
++++ b/Makefile.am	2026-08-17 19:59:11.056129709 +0000
+@@ -5,8 +5,10 @@
+ 
+ bin_PROGRAMS = art_illumina art_454 art_SOLiD
+ 
+-art_illumina_SOURCES = art_illumina_src/art.h art_illumina_src/empdist.h art_illumina_src/readSeqFile.h art_illumina_src/seqRead.h art_illumina_src/samRead.h \
+-		       art_illumina_src/art_illumina.cpp art_illumina_src/art_qual_scale.cpp art_illumina_src/empdist.cpp art_illumina_src/readSeqFile.cpp art_illumina_src/seqRead.cpp art_illumina_src/samRead.cpp
++art_illumina_SOURCES = art_illumina_src/art.h art_illumina_src/empdist.h art_illumina_src/readSeqFile.h art_illumina_src/seqRead.h art_illumina_src/samRead.h art_illumina_src/artio.h art_illumina_src/artrand.h \
++		       art_illumina_src/art_illumina.cpp art_illumina_src/art_qual_scale.cpp art_illumina_src/empdist.cpp art_illumina_src/readSeqFile.cpp art_illumina_src/seqRead.cpp art_illumina_src/samRead.cpp art_illumina_src/artio.cpp
++# zlib: transparent gzip input/output in art_illumina
++art_illumina_LDADD = -lz
+ art_454_SOURCES = art_454_src/art.h art_454_src/read_profile.h art_454_src/readSeqFile.h art_454_src/seqRead.h art_454_src/samRead.h \
+ 		  art_454_src/art_454.cpp art_454_src/art.cpp art_454_src/read_profile.cpp art_454_src/readSeqFile.cpp art_454_src/seqRead.cpp  art_454_src/samRead.cpp
+ 
+diff -ruN a/Makefile.in b/Makefile.in
+--- a/Makefile.in	2016-06-06 02:33:11.000000000 +0000
++++ b/Makefile.in	2026-08-17 19:59:11.056129709 +0000
+@@ -116,9 +116,10 @@
+ 	art_illumina_src/empdist.$(OBJEXT) \
+ 	art_illumina_src/readSeqFile.$(OBJEXT) \
+ 	art_illumina_src/seqRead.$(OBJEXT) \
+-	art_illumina_src/samRead.$(OBJEXT)
++	art_illumina_src/samRead.$(OBJEXT) \
++	art_illumina_src/artio.$(OBJEXT)
+ art_illumina_OBJECTS = $(am_art_illumina_OBJECTS)
+-art_illumina_LDADD = $(LDADD)
++art_illumina_LDADD = -lz
+ am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
+ am__vpath_adj = case $$p in \
+     $(srcdir)/*) f=`echo "$$p" | sed "s|^$$srcdirstrip/||"`;; \
+@@ -330,8 +331,8 @@
+ AUTOMAKE_OPTIONS = subdir-objects
+ ACLOCAL_AMFLAGS = ${ACLOCAL_FLAGS}
+ AM_CPPFLAGS = -O3
+-art_illumina_SOURCES = art_illumina_src/art.h art_illumina_src/empdist.h art_illumina_src/readSeqFile.h art_illumina_src/seqRead.h art_illumina_src/samRead.h \
+-		       art_illumina_src/art_illumina.cpp art_illumina_src/art_qual_scale.cpp art_illumina_src/empdist.cpp art_illumina_src/readSeqFile.cpp art_illumina_src/seqRead.cpp art_illumina_src/samRead.cpp
++art_illumina_SOURCES = art_illumina_src/art.h art_illumina_src/empdist.h art_illumina_src/readSeqFile.h art_illumina_src/seqRead.h art_illumina_src/samRead.h art_illumina_src/artio.h art_illumina_src/artrand.h \
++		       art_illumina_src/art_illumina.cpp art_illumina_src/art_qual_scale.cpp art_illumina_src/empdist.cpp art_illumina_src/readSeqFile.cpp art_illumina_src/seqRead.cpp art_illumina_src/samRead.cpp art_illumina_src/artio.cpp
+ 
+ art_454_SOURCES = art_454_src/art.h art_454_src/read_profile.h art_454_src/readSeqFile.h art_454_src/seqRead.h art_454_src/samRead.h \
+ 		  art_454_src/art_454.cpp art_454_src/art.cpp art_454_src/read_profile.cpp art_454_src/readSeqFile.cpp art_454_src/seqRead.cpp  art_454_src/samRead.cpp
+@@ -560,6 +561,7 @@
+ @AMDEP_TRUE@@am__include@ @am__quote@art_SOLiD_src/$(DEPDIR)/read_SOLiD.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@art_SOLiD_src/$(DEPDIR)/samRead.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@art_illumina_src/$(DEPDIR)/art_illumina.Po@am__quote@
++@AMDEP_TRUE@@am__include@ @am__quote@art_illumina_src/$(DEPDIR)/artio.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@art_illumina_src/$(DEPDIR)/art_qual_scale.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@art_illumina_src/$(DEPDIR)/empdist.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@art_illumina_src/$(DEPDIR)/readSeqFile.Po@am__quote@

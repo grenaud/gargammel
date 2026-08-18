@@ -67,6 +67,34 @@ In the main directory, simply type
 
 This should install bamtools (C++ library to read/write BAM files) and ART (Illumina read simulator).
 
+### Static binaries
+
+If you need binaries that can be copied to another machine, or to a cluster
+where you cannot install libraries, type
+
+  make static
+
+instead. This builds everything as above, then relinks the six programs in
+`src/` and `art_illumina` against the static libc, libstdc++, libz and libgsl,
+so that they have no shared library dependencies at all:
+
+    $ ldd src/fragSim
+    	not a dynamic executable
+
+The seven binaries are then self-contained; `gargammel.pl` itself is a Perl
+script and still needs perl. The simulated reads are unaffected: a static build
+gives the same output as an ordinary one, seed for seed.
+
+This needs the static system libraries, which on most distributions are a
+separate package from the headers. On Debian/Ubuntu they come with `libc6-dev`,
+`zlib1g-dev` and `libgsl-dev`. The linker warns that `getaddrinfo` in a static
+binary needs the glibc it was linked against; this comes from a part of
+bamtools that gargammel never calls and can be ignored. macOS does not ship a
+static libc, so use the ordinary build there.
+
+To go back to ordinary dynamic binaries, run `make clean` first: `make` on its
+own will leave the static ones in place, since they are newer than the sources.
+
 Tests:
 -------------------------------------------------------------------------------------
 
@@ -185,8 +213,231 @@ Here are further examples of usage:
 
 `gargammel.pl -n 1000000  --comp 0,0,1 -l 40 -rl 96      -ss HS25 -o data/simulation data/`
 
+* Reproduce a simulation exactly, by fixing the seed:
+
+`gargammel.pl -n 1000000  --comp 0,0,1 -l 40 -rl 96      -ss HS25 --seed 31337 -o data/simulation data/`
 
 
+
+Simulating ancient DNA in one line:
+-------------------------------------------------------------------------------------
+
+gargammel.pl exists to mix endogenous, present-day human and microbial sources
+in a given proportion. If you only have one genome to draw from, the four
+programs it drives can be chained directly: each stage reads what the previous
+one writes, so the whole simulation is a single command that never touches the
+disk in between:
+
+    src/fragSim -n 1000000 -f src/sizefreq.size.gz --seed 1 ref.fa \
+     | src/deamSim -damage 0.024,0.36,0.0097,0.68 --seed 2 /dev/stdin \
+     | src/adptSim -l 75 -artp /dev/stdout --seed 3 /dev/stdin \
+     | art_src_MountRainier/art_illumina -ss HS25 -amp -na -p -l 75 -c 1 -rs 4 \
+        -i - --fq1 sim_s1.fq.gz --fq2 sim_s2.fq.gz
+
+That is the whole pipeline: fragSim draws the fragments, deamSim damages them,
+adptSim adds the adapters and splits each fragment into the two mates, and
+art_illumina adds the sequencing errors and the quality scores. The result is
+`sim_s1.fq.gz` and `sim_s2.fq.gz`, exactly what gargammel.pl would have
+produced for a single source.
+
+`ref.fa` needs a `ref.fa.fai` next to it, which `samtools faidx ref.fa`
+creates. Give each program its own `--seed` (`-rs` for art) if you want the run
+to be reproducible; see the section on reproducible simulations. deamSim and
+adptSim read their input as `/dev/stdin` rather than `-`.
+
+For a single-end run, ask adptSim for one read per fragment and drop `-p`:
+
+    src/fragSim -n 1000000 -l 45 --seed 1 ref.fa \
+     | src/deamSim -damage 0.024,0.36,0.0097,0.68 --seed 2 /dev/stdin \
+     | src/adptSim -l 75 -arts /dev/stdout --seed 3 /dev/stdin \
+     | art_src_MountRainier/art_illumina -ss HS25 -amp -na -l 75 -c 1 -rs 4 \
+        -i - -o - | gzip -c > sim_s.fq.gz
+
+### Keeping the intermediate files with tee
+
+Piping everything means the intermediate stages are gone by the time the reads
+are written, and those are usually what you want to compare the reads against:
+the undamaged fragments tell you what each read should have been, and the
+deflines carry the true coordinates. Add a `tee` between any two stages to keep
+one without interrupting the flow:
+
+    src/fragSim -n 1000000 -f src/sizefreq.size.gz --seed 1 ref.fa \
+     | tee >(gzip -c > sim.e.fa.gz) \
+     | src/deamSim -damage 0.024,0.36,0.0097,0.68 --seed 2 /dev/stdin \
+     | tee >(gzip -c > sim_d.fa.gz) \
+     | src/adptSim -l 75 -artp /dev/stdout --seed 3 /dev/stdin \
+     | tee >(gzip -c > sim_a.fa.gz) \
+     | art_src_MountRainier/art_illumina -ss HS25 -amp -na -p -l 75 -c 1 -rs 4 \
+        -i - --fq1 sim_s1.fq.gz --fq2 sim_s2.fq.gz
+
+This writes the same files gargammel.pl leaves behind (`.e.fa.gz` the
+fragments, `_d.fa.gz` the damaged fragments, `_a.fa.gz` the amplicons handed to
+art) and the reads are unchanged: a `tee` only copies the stream. Keep the ones
+you need and drop the rest; comparing `sim.e.fa.gz` with `sim_d.fa.gz` position
+by position, for instance, gives you the exact set of deaminated bases.
+
+`>(...)` is a bash process substitution, so run these under bash rather than a
+plain POSIX shell. If your shell does not have it, `tee sim_d.fa` and gzipping
+afterwards does the same thing at the cost of the uncompressed file. Note that
+the shell reports the exit status of the last command in a pipeline only; use
+`set -o pipefail` if you want a failure in fragSim or deamSim to be noticed.
+
+
+Reproducible simulations:
+-------------------------------------------------------------------------------------
+
+Pass `--seed [int]` to gargammel.pl and two runs with the same seed and the
+same arguments produce byte-identical output. Without it, every run is seeded
+from the clock, as before.
+
+The seed is spread over the whole pipeline: gargammel.pl seeds its own draws
+(it splits the requested number of fragments over the input genomes at random)
+and hands each of fragSim, deamSim, adptSim and art a separate seed derived
+from it, so the individual programs do not share a random stream. Each of those
+programs also accepts its own `--seed` (`-rs` for art) if you drive them
+directly.
+
+All four sub-programs had to be seedable for this to hold. adptSim in
+particular pads fragments shorter than the read length with random bases, and
+that padding used to come from a clock-seeded generator.
+
+art_illumina now carries its own random number generator rather than using the
+one from the C library. It reproduces glibc's `rand()` exactly, so runs match
+earlier results on Linux, and art_illumina on its own gives the same reads from
+the same seed on Linux and on macOS.
+
+Note that this cross-platform guarantee covers art_illumina only. fragSim,
+deamSim and adptSim still draw through the C library (`rand`, `drand48`) and
+`std::default_random_engine`, all of which differ between implementations, so a
+whole gargammel run with a fixed seed reproduces exactly on the same machine and
+toolchain, not between Linux and macOS.
+
+
+Speed and I/O of the read simulator:
+-------------------------------------------------------------------------------------
+
+ART is the slowest stage of the pipeline. The copy gargammel builds is patched
+(see `patches/art_illumina_gargammel.patch`, applied by the Makefile when ART is
+unpacked) and runs several times faster than the stock version on
+gargammel-style input. On 200,000 amplicons drawn with the size distribution in
+`src/sizefreq.size.gz`, paired-end at 75bp, it takes 0.9s against 7.3s;
+single-end at 75bp, 0.5s against 4.0s; and on 100,000 amplicons paired-end at
+250bp on MSv3, 1.5s against 9.2s.
+
+Apart from the indel fix described below, none of this changes the reads: given
+the same seed and `-ir 0 -dr 0 -ir2 0 -dr2 0`, the patched and the stock
+art_illumina produce byte-identical FASTQ.
+
+The patch also gives art_illumina gzip and pipe support, which gargammel.pl now
+uses to write the reads compressed in one pass instead of shelling out to gzip
+afterwards. The same applies at the other end of that stage: because the
+patched art reads a gzipped reference, adptSim writes the amplicons straight to
+`<prefix>_a.fa.gz` (any `-arts`/`-artp` destination ending in `.gz` is
+compressed as it is written) and art reads that file as it is. The amplicons
+never exist uncompressed and are no longer gzipped in a pass of their own after
+art has finished.
+
+gargammel.pl asks for compression level 4 rather than gzip's
+default of 6: on a simulated FASTQ, level 6 costs about five times the
+compression time of level 4 for 7% off the file size (5.98s and 11.1MB against
+1.22s and 12.0MB, on 200,000 reads here). The reads themselves are unaffected,
+only the size of the container; change the `-gzl 4` in gargammel.pl if you want
+the smaller files back.
+
+* gzipped FASTA input is detected and decompressed with no flag;
+* `-gz` (and `-gzl [1-9]` for the level) compresses the FASTQ/ALN/SAM output;
+* `-i` and the new `--fq1`, `--fq2`, `--aln1`, `--aln2` and `--samFile` options
+  accept `-`, `/dev/stdin`, `/dev/stdout`, `/dev/fd/N` and `fd:N`, so ART can be
+  put in the middle of a pipeline:
+
+`gzip -cd amplicons.fa.gz | art_illumina -ss HS25 -amp -na -p -l 75 -c 1 -i - --fq1 r1.fq.gz --fq2 r2.fq.gz`
+
+When the reads go to stdout the run summary is written to stderr instead, so
+the two never mix. Building the ALN or SAM header needs a second pass over the
+reference, which is impossible on a pipe; ART says so rather than writing a
+headerless file, so use `-na` without `-sam` when reading from stdin.
+
+
+
+Sequencing indels:
+-------------------------------------------------------------------------------------
+
+Besides substituting bases, art_illumina also inserts and deletes them, at a low
+per-base rate, so that roughly one read in eighty at 75bp carries an indel. What
+those rates are and where they come from is set out below, along with when you
+might want to override them; `gargammel.pl --noindel` switches indels off
+entirely.
+
+Note that gargammel produced almost no indels before version 1.1.5, because of a
+bug in ART:
+
+art_illumina's `-ir`/`-dr` insertion and deletion rates were not being realized
+in ART 2.5.8: the table in `set_rate()` (`seqRead.h`) was built from P(X > i)
+starting at i=1, so index i held P(X >= i+2) and placing one indel was gated on
+the probability of needing two. At the default rates, 0.003% of 75bp reads
+carried an indel instead of the ~1.5% the parameters imply. The patch starts
+that table at i=0, and the measured rate is now 1.277% on gargammel amplicons,
+matching an independent reimplementation of ART (`art_modern` 1.5.1, 1.275% on
+the same input).
+
+This means reads simulated with gargammel 1.1.5 differ from those of 1.1.4 even
+at the same seed: about one read in eighty now carries a sequencing indel.
+`gargammel.pl --noindel` turns them off, which reproduces the
+substitution-only reads earlier versions produced:
+
+`gargammel.pl -n 1000000 --comp 0,0,1 -l 40 -rl 75 --noindel -o data/simulation data/`
+
+### Where the indel rates come from, and when to change them
+
+The rates are art_illumina's own defaults. They are per base, not per read, and
+the reverse read is given roughly twice the rate of the forward one:
+
+| | insertion | deletion |
+|---|---|---|
+| forward read (`-ir`, `-dr`) | 9e-5 | 1.1e-4 |
+| reverse read (`-ir2`, `-dr2`) | 1.5e-4 | 2.3e-4 |
+
+Since they apply per base, the chance that a read carries at least one indel
+grows with the read length you ask for with `-rl`:
+
+| read length | forward | reverse |
+|---|---|---|
+| 35bp | 0.70% | 1.32% |
+| 75bp | 1.49% | 2.81% |
+| 100bp | 1.98% | 3.73% |
+| 150bp | 2.96% | 5.54% |
+| 250bp | 4.88% | 9.06% |
+
+Simulated runs land close to that: counting gapped alignments in art_illumina's
+own ALN output gives 1.28% of forward reads at 75bp and 3.06% at 150bp, against
+the 1.49% and 2.96% above. The small discrepancies are sampling, plus the fact
+that art draws once per entry of its indel table rather than inverting the
+distribution in one go.
+
+The only published account of where these four numbers come from is one
+sentence in the ART paper: "the built-in insertion and deletion error rates
+were derived from 35 bp reads aligned with our modified ACANA alignment tool".
+The values themselves do not appear in the paper, and they are hardcoded in
+art_illumina with no comment or citation. Three things follow, and they matter
+if the indel rate is something your analysis is sensitive to:
+
+* they were estimated on **35bp reads on the Illumina chemistry of around
+  2010**, so they are not a description of any current platform;
+* they are the same **whichever platform you select with `-ss`**. This is
+  unlike the substitution errors, which are drawn from the empirical quality
+  profile of the platform you chose, and so do track it;
+* the per-read numbers above follow from the per-base rate and nothing else.
+  A 250bp run does not have a measured indel rate of 4.9%; that is simply what
+  9e-5 and 1.1e-4 per base come to over 250 bases.
+
+Treat them as a plausible default rather than a calibrated one. If you have an
+estimate for the data you are emulating — mapping your real reads and counting
+gapped alignments will give you one — pass it to art_illumina directly with
+`-ir`, `-dr`, `-ir2` and `-dr2`, or switch indels off with
+`gargammel.pl --noindel` if they would confound what you are measuring.
+
+    Huang, Weichun, et al. "ART: a next-generation sequencing read simulator."
+    Bioinformatics 28.4 (2012): 593-594.
 
 
 Specifying damage/deamination:
@@ -195,6 +446,11 @@ Specifying damage/deamination:
 If you use gargammel.pl or deamSim, you can speficiy deamination/damage using either:
 
 1. Use Briggs model parametes (see Briggs, Adrian W., et al. "Patterns of damage in genomic DNA sequences from a Neandertal." Proceedings of the National Academy of Sciences 104.37 (2007): 14616-14621.)
+
+    -damage v,l,d,s
+
+The four parameters and what they do to a molecule are described in the section
+on the Briggs model below.
 
 2. Use a misincorporation matrix computed by mapDamage (https://ginolhac.github.io/mapDamage). This matrix is in the results directory created by mapDamage and is called "misincorporation.txt". There are 2 examples of such files:
 
@@ -228,6 +484,94 @@ This follows the output of https://bitbucket.org/ustenzel/damage-patterns.git
     Lazaridis, Iosif, et al. "Ancient human genomes suggest three ancestral populations for present-day Europeans." Nature 513.7518 (2014): 409-413.
 
 See the methylation question for adding different rates of deamination for methylated/unmethylated cytosine.
+
+
+The Briggs model:
+-------------------------------------------------------------------------------------
+
+    -damage v,l,d,s
+
+This is the model of:
+
+    Briggs, Adrian W., et al. "Patterns of damage in genomic DNA sequences from a Neandertal." Proceedings of the National Academy of Sciences 104.37 (2007): 14616-14621.
+
+Rather than giving a rate of C->T per position, it describes the physical state
+of an ancient molecule and lets the damage pattern follow from it. Four
+parameters are needed:
+
+| parameter | meaning |
+|---|---|
+| `v` | probability that the molecule carries a nick |
+| `l` | geometric parameter for the length of the single-stranded overhangs |
+| `d` | probability that a cytosine in a double-stranded region is deaminated |
+| `s` | probability that a cytosine in a single-stranded region is deaminated |
+
+The maximum likelihood estimates of Briggs et al. for their Neandertal data are
+`-damage 0.024,0.36,0.0097,0.68`, which is a reasonable starting point for a
+double-stranded library.
+
+### What the model says about one molecule
+
+An ancient molecule is double-stranded in the middle and frayed at the ends,
+where one strand extends past the other. Cytosine deaminates to uracil far more
+readily when it is not paired, which is why the damage concentrates at the
+ends: the single-stranded overhangs deaminate at `s`, the double-stranded
+interior only at the much lower `d`. The uracils are read as thymine, so a
+deaminated C appears as T.
+
+The length of each overhang is drawn from a geometric distribution with
+parameter `l`: `l` is the probability of stopping at each base, so a larger `l`
+means shorter overhangs, and an overhang of length zero has probability `l`.
+An overhang is as likely to leave the 5' strand protruding as the 3' one, and
+the blunt-end repair step of the library preparation fills in the 3' overhangs
+while leaving the 5' ones. Each end of the molecule therefore shows a
+single-stranded region only half of the time.
+
+Which substitution you see depends on which end you are at. A 5' overhang is
+sequenced as it is, so its deaminated cytosines show up as C->T. A 3' overhang
+is read on the complementary strand, where the same deamination appears as
+G->A. That asymmetry — C->T at the 5' end, G->A at the 3' end — is the
+signature of a double-stranded library, and it is what the model produces
+without being told to.
+
+Nicks are the second ingredient. A molecule with a nick, which happens with
+probability `v`, is copied from the nick onwards along the other strand, so
+everything downstream of the nick is read in the opposite orientation: the
+double-stranded interior after the nick shows G->A instead of C->T. The nick
+sits uniformly within the double-stranded region. A nick inside an overhang
+would merely shorten it and is not observable, and Briggs et al. note that
+molecules with a second nick on the opposite strand are lost during the repair,
+which "causes the distribution of first nicks in the sequenced fragments to be
+uniform rather than geometric".
+
+Molecules so short that the two overhangs meet are single-stranded over their
+whole length and deaminate at `s` everywhere.
+
+### The rate you should expect at the first base
+
+For the estimates above, the 5'-most base is inside a 5' overhang with
+probability 0.5*(1-l) = 0.32 and deaminates there with probability s = 0.68;
+the rest of the time it is double-stranded and deaminates with probability
+d = 0.0097, which works out at about 22%. Simulated fragments come out at
+21-22% C->T at the first position and the same G->A at the last one, which is
+the ~21% reported by Briggs et al. The rate then falls off geometrically with
+the distance from the end, by a factor of about (1-l) per base:
+
+    position from 5' end     1      2      3      4      5      6
+    C->T                     0.215  0.143  0.099  0.067  0.043  0.033
+
+For comparison, the pre-1.1.5 behavior kept by `-damagelegacy` starts at 0.440
+for the same parameters.
+
+### Note on versions before 1.1.5
+
+Two aspects of this model were implemented incorrectly up to gargammel 1.1.4 and were corrected afterwards:
+
+  * The factor of one half above was missing: gargammel drew a geometric overhang at both ends unconditionally, as though the blunt-end repair never removed one. This doubled the rate of C->T and G->A at the terminal positions. With the parameters of Briggs et al. the 5'-most C->T rate came out at 44% instead of the 21% reported in that paper.
+
+  * The nick was placed geometrically rather than uniformly, and it was looked for across the single-stranded overhangs as well, where a nick is not observable. This shifted the C->T/G->A crossover in the interior of the molecule towards the 5' end. The effect is bounded by `d` and is therefore much smaller than the one above.
+
+If you need to reproduce a simulation made with an earlier version, use `-damagelegacy` instead of `-damage` (or pass `--damagelegacy` to gargammel.pl, which switches every `-damage*` option at once). It takes the same four parameters and restores the previous behavior exactly.
 
 
 Can I specify different rates of misincorporation due to deamination for the endogenous/bacterial/human contaminant sources?
