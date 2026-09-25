@@ -193,11 +193,16 @@ int main (int argc, char *argv[]) {
     }
 
     //If the user has specified the seed, use it; otherwise libgab seeds
-    //randomDNASeq() from the wall clock on first use.
+    //randomDNASeq() from the wall clock on first use.  The padding below asks
+    //libgab not to reseed when we have seeded ourselves, by passing callSRAND
+    //false, which is how fragSim and deamSim do it too.  libgab used to expose
+    //the flag it seeds behind as a global "srandCalled" that a caller could set
+    //instead; that was a file-scope static in the header, so every translation
+    //unit had its own copy, and libgab 1.1.0 replaced it with an internal
+    //ensureSrandSeeded().
     if(seedSpecified){
 	srand(   seed );
 	srand48( seed );
-	srandCalled=true;
     }
 
     if(outFastagzb && outFastagzfwd.empty()){
@@ -341,7 +346,7 @@ int main (int argc, char *argv[]) {
 	
 	//if even with the adapter does not add up to length, add random seq
 	if(int(seqf.size()) < desiredLength){
-	    seqf=seqf+randomDNASeq(desiredLength-int(seqf.size()));
+	    seqf=seqf+randomDNASeq(desiredLength-int(seqf.size()),!seedSpecified);
 	    addedRandom=true;
 	}
 
@@ -354,7 +359,7 @@ int main (int argc, char *argv[]) {
 	}
 	
 	if(int(seqr.size()) < desiredLength){
-	    seqr=seqr+randomDNASeq(desiredLength-int(seqr.size()));
+	    seqr=seqr+randomDNASeq(desiredLength-int(seqr.size()),!seedSpecified);
 	}
 
 

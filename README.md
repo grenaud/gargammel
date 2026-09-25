@@ -646,6 +646,139 @@ It is normally called "dnacomp.txt" in the output directory, you can filter a si
 	grep "^21\|^#\|^Chr"  /path to mapDamage output/results_[sample name]/dnacomp.txt >  dnacomp.txt
 
 
+Empirical damage and insert size profiles:
+-------------------------------------------------------------------------------------
+
+`examples_damage_inserts/` holds ready-made damage profiles and fragment length
+distributions measured from seven published ancient human genomes, so that a
+simulation can be given the damage and the fragment sizes of a real sample
+rather than parameters picked by hand. For each sample there are four files:
+
+| file | what it is | used by |
+|---|---|---|
+| `[sample].5p.prof` | substitution rates over the first 20 bases of the 5' end | deamSim `-profile` |
+| `[sample].3p.prof` | the same for the 3' end | deamSim `-profile` |
+| `[sample].isize.gz` | the fragment length distribution, as `count length` | fragSim `-f`, after conversion |
+| `[sample].pdf` | a plot of that length distribution | for looking at |
+
+The samples span a wide range of damage and fragment lengths, which is the
+point of having several: pick the one closest to the data you want to emulate.
+The rates below are C->T at the first 5' base and G->A at the first 3' base,
+the two numbers that most immediately characterize a double-stranded library:
+
+| sample | 5' C->T | 3' G->A | median length | site / study |
+|---|---|---|---|---|
+| `cth842` | 0.409 | 0.412 | 52 | Çatalhöyük, Anatolia — Yaka et al. 2021 |
+| `ATP2` | 0.313 | 0.314 | 56 | El Portalón, Atapuerca — Günther et al. 2015 |
+| `I1072` | 0.228 | 0.219 | 41 | ancient Near East — Lazaridis et al. 2016 |
+| `prs012` | 0.096 | 0.197 | 91 | Primrose Grange, Ireland — Sánchez-Quinto et al. 2019 |
+| `sf12` | 0.022 | 0.292 | 65 | Stora Förvar, Gotland — Günther et al. 2018 |
+| `irk034` | 0.027 | 0.026 | 92 | Lake Baikal, northeast Asia — Kılınç et al. 2021 |
+| `Ust_Ishim` | 0.022 | 0.039 * | 54 | Ust'-Ishim, western Siberia — Fu et al. 2014 |
+
+\* Ust'-Ishim came from a **single-stranded** library, and its profile shows it:
+C->T at *both* ends and no G->A at all, where the six double-stranded libraries
+show C->T at the 5' end and the mirror-image G->A at the 3' end. The starred
+number is therefore 3' C->T. If you want a single-stranded library, this is the
+one to use.
+
+### Using them
+
+deamSim's `-profile` takes a *prefix* to which it appends `5p.prof` and
+`3p.prof`, so the prefix here ends in a dot:
+
+    src/deamSim -profile examples_damage_inserts/ATP2. frags.fa.gz > damaged.fa
+
+Note that `gargammel.pl` itself has no `-profile` option: the wrapper takes
+damage as `-matfile` (a substitution matrix, `5.dat`/`3.dat`), `-mapdamage` or
+`-damage`, none of which reads the `.prof` format. To simulate with these
+profiles, drive the programs yourself, which is what the one-liner near the top
+of this README is for:
+
+    src/fragSim -n 1000000 -f ATP2.freq.gz --seed 1 ref.fa \
+     | src/deamSim -profile examples_damage_inserts/ATP2. --seed 2 /dev/stdin \
+     | src/adptSim -l 75 -artp /dev/stdout --seed 3 /dev/stdin \
+     | art_src_MountRainier/art_illumina -ss HS25 -amp -na -p -l 75 -c 1 -rs 4 \
+        -i - --fq1 sim_s1.fq.gz --fq2 sim_s2.fq.gz
+
+That gives one source with the damage and the fragment lengths of the chosen
+sample. For a run that mixes endogenous, contaminant and microbial sources you
+need gargammel.pl, and therefore a matrix rather than a profile.
+
+The length distributions need one conversion first. `insize | sort -n | uniq -c`
+writes `count length`, whereas fragSim `-f` wants `length[TAB]frequency` with
+the frequencies summing to 1, so the columns have to be swapped and normalized:
+
+    gzip -cd examples_damage_inserts/ATP2.isize.gz \
+     | awk '{ c[$2]=$1; t+=$1 } END{ for(l in c) printf "%d\t%.10f\n", l, c[l]/t }' \
+     | sort -n | gzip > ATP2.freq.gz
+
+    ./gargammel.pl -n 1000000 --comp 0,0,1 -f ATP2.freq.gz -o data/simulation data/
+
+The converted file works with `gargammel.pl -f` as well as `fragSim -f`, since
+the wrapper passes it straight through; it is only the damage profiles that
+gargammel.pl cannot take.
+
+Passing an unconverted `.isize.gz` to `-f` is caught rather than silently
+misread: fragSim requires two tab-separated fields per line and frequencies
+that sum to 1, and stops with an error otherwise.
+
+### Two things to check before using these
+
+* **`irk034` and `prs012` have a spike at exactly 151bp**, which is 3.34% and
+  2.44% of their reads and by far the tallest point in each distribution. That
+  is the read length of the run: for pairs that were never merged, the observed
+  insert length saturates there. Simulating from these unmodified gives that
+  same 2-3% of fragments at exactly 151bp, which is an artifact of the
+  measurement and not biology. Drop the last bin if that matters to you.
+* **`prs012` and `sf12` are strongly asymmetric between their two ends**
+  (0.096 against 0.197, and 0.022 against 0.292), rather than showing the
+  near-equal 5' C->T and 3' G->A of the other double-stranded libraries. Look
+  at the profiles before assuming they behave like the rest.
+
+### How they were made
+
+The damage profiles come from
+[bam2prof](https://github.com/grenaud/bam2prof) over the first 20 bases,
+`-double` for every sample except Ust'-Ishim, which used `-single`:
+
+    bam2prof -length 20 -double -5p ATP2.5p.prof -3p ATP2.3p.prof [sample].bam
+
+and the length distributions from
+[insertsize](https://github.com/grenaud/insertsize):
+
+    insize [sample].bam | sort -n | uniq -c | gzip > ATP2.isize.gz
+
+`listbams` records which BAM each one came from, and `listcmds_bp2` and
+`listcmds_i` the exact commands. To add a sample of your own, run those two
+programs over your BAM.
+
+### Sources of the samples
+
+    Fu, Qiaomei, et al. "Genome sequence of a 45,000-year-old modern human from
+    western Siberia." Nature 514.7523 (2014): 445-449.
+
+    Günther, Torsten, et al. "Ancient genomes link early farmers from Atapuerca
+    in Spain to modern-day Basques." PNAS 112.38 (2015): 11917-11922.
+
+    Lazaridis, Iosif, et al. "Genomic insights into the origin of farming in the
+    ancient Near East." Nature 536.7617 (2016): 419-424.
+
+    Günther, Torsten, et al. "Population genomics of Mesolithic Scandinavia:
+    Investigating early postglacial migration routes and high-latitude
+    adaptation." PLoS Biology 16.1 (2018): e2003703.
+
+    Sánchez-Quinto, Federico, et al. "Megalithic tombs in western and northern
+    Neolithic Europe were linked to a kindred society." PNAS 116.19 (2019):
+    9469-9474.
+
+    Kılınç, Gülşah Merve, et al. "Human population dynamics and Yersinia pestis
+    in ancient northeast Asia." Science Advances 7.2 (2021): eabc4587.
+
+    Yaka, Reyhan, et al. "Variable kinship patterns in Neolithic Anatolia
+    revealed by ancient genomes." Current Biology 31.11 (2021): 2455-2468.
+
+
 How can I specify the size distribution?
 -------------------------------------------------------------------------------------
 
