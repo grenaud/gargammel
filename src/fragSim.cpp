@@ -438,7 +438,7 @@ int main (int argc, char *argv[]) {
 	"\t\t"+"-l\t"+"[length]" +"\t\t\t"+"Generate fragments of fixed length  (default: "+stringify(sizeFragments)+")"+"\n"+
 	"\t\t"+"-s\t"+"[file]"   +"\t\t\t\t"+"Open file with size distribution (one fragment length per line)"+"\n"+
 	"\t\t"+"-f\t"+"[file]"   +"\t\t\t\t"+"Open file with size frequency in the following format:"+"\n"+
-	"\t\t"+"\t"   +""        +"\t\t\t\t\t"+"length[TAB]freq\tex:"+"\n"+
+	"\t\t"+"\t"   +""        +"\t\t\t\t\t"+"length[TAB or space]freq or count\tex:"+"\n"+
 	"\t\t"+"\t"   +""        +"\t\t\t\t\t"+"40\t0.0525"+"\n"+
 	"\t\t"+"\t"   +""        +"\t\t\t\t\t"+"41\t0.0491"+"\n"+
 	"\t\t"+"\t"   +""        +"\t\t\t\t\t"+"..."+"\n"+
@@ -756,15 +756,26 @@ int main (int argc, char *argv[]) {
 	double cumulProb=0.0;
 	if (sizeFragfd.good()){
 	    while ( getline (sizeFragfd,line)){
-		vector<string> fields = allTokens( line , '\t');
+		if(line.find_first_not_of(" \t\r")==string::npos)
+		    continue;
+		vector<string> fields = allTokensWhiteSpaces( line );
 		if(fields.size() != 2){
 		    cerr << "The following line "<<line<<" in file "<<fileSizeFragFreq<<" does not have 2 fields"<<endl;
 		    return 1;		    
 		}
 
-		cumulProb    += destringify<double>( fields[1] ); 
+		double w = destringify<double>( fields[1] );
+		if(w<0){
+		    cerr << "The following line "<<line<<" in file "<<fileSizeFragFreq<<" has a negative frequency"<<endl;
+		    return 1;
+		}
+		cumulProb    += w;
 		freqFragLength toadd;
 		toadd.l       = destringify<int>(    fields[0] ); 
+		if(toadd.l<1){
+		    cerr << "The following line "<<line<<" in file "<<fileSizeFragFreq<<" has an invalid length, expected length then frequency or count"<<endl;
+		    return 1;
+		}
 		toadd.cProb   = cumulProb;
 		fragLengthFreq.push_back(toadd);
 	    }
@@ -775,11 +786,15 @@ int main (int argc, char *argv[]) {
 	    return 1;
 	}
 
-	if( (cumulProb<0.99) ||
-	    (cumulProb>1.01) ){
-	    cerr<<"Problem in file: "<<fileSizeFragFreq<<", the sum of frequencies does not sum to 1, sum="<<cumulProb<<endl;
+	if(fragLengthFreq.empty() || cumulProb<=0){
+	    cerr<<"Problem in file: "<<fileSizeFragFreq<<", no positive frequencies or counts found"<<endl;
 	    return 1;
 	}
+
+	//second column can be frequencies or integer counts, normalize to sum to 1
+	for(size_t k=0;k<fragLengthFreq.size();k++)
+	    fragLengthFreq[k].cProb /= cumulProb;
+	fragLengthFreq.back().cProb = 1.0;
 	    
     }
 
@@ -1108,34 +1123,69 @@ int main (int argc, char *argv[]) {
 	if(strEndsWith(inFile,".gz")){
 	
 
-	    char tmpname[ tempfile_.size()];
-	    strcpy(tmpname,tempfile_.c_str());
-	    int fdtemp = mkstemp(tmpname);
+	    igzstream fastagzfd;
+	    fastagzfd.open(inFile.c_str(), ios::in);
+	    if (!fastagzfd.good()){
+		cerr<<"Unable to open fasta file "<<inFile<<endl;
+		return 1;
+	    }
+
+	    vector<char> tmpname(tempfile_.begin(),tempfile_.end());
+	    tmpname.push_back('\0');
+	    int fdtemp = mkstemp(&tmpname[0]);
 	    if(fdtemp == -1){
 		cerr<<"Cannot create temp file using pattern: "<<tempfile_<<", either choose a different temp dir or unzip the file"<<endl;
 		return 1;
 	    }
-	    tempfile_ = string(tmpname);
+	    close(fdtemp);
+	    tempfile_ = string(&tmpname[0]);
 
 	    cerr<<"File "<<inFile<<" is zipped, trying to write to temp. file: "<<tempfile_<<endl;
 
-	    fastaFile    = tmpname;
-	    fastaFileFai = inFile+".fai";	
+	    fastaFile    = tempfile_;
+	    //the index of the unzipped data is built while unzipping
+	    fastaFileFai = tempfile_+".fai";
 
-	    igzstream fastagzfd;
 	    string linetmp;
+	    ofstream myFiletmp(tempfile_.c_str());
+	    ofstream myFaitmp(fastaFileFai.c_str());
+	    if(!myFiletmp.is_open() || !myFaitmp.is_open()){
+		cerr<<"Cannot write to temp file "<<tempfile_<<endl;
+		return 1;
+	    }
 
-	    ofstream myFiletmp;	
-	    myFiletmp.open(tmpname);
-
-	    fastagzfd.open(inFile.c_str(), ios::in);
-
-	    if (fastagzfd.good()){
-		while ( getline (fastagzfd,linetmp)){
-		    myFiletmp << linetmp << endl;
+	    string faiName;
+	    bool   inRecord=false;
+	    uint64_t faiLen=0, faiOffset=0, bytesWritten=0;
+	    int32_t  faiBlen=0, faiLlen=0;
+	    while ( getline (fastagzfd,linetmp)){
+		if(!linetmp.empty() && linetmp[linetmp.size()-1]=='\r')
+		    linetmp.erase(linetmp.size()-1);
+		myFiletmp << linetmp << "\n";
+		bytesWritten += linetmp.size()+1;
+		if(!linetmp.empty() && linetmp[0]=='>'){
+		    if(inRecord)
+			myFaitmp<<faiName<<"\t"<<faiLen<<"\t"<<faiOffset<<"\t"<<faiBlen<<"\t"<<faiLlen<<"\n";
+		    size_t sp=linetmp.find_first_of(" \t");
+		    faiName   = linetmp.substr(1,sp==string::npos?string::npos:sp-1);
+		    inRecord  = true;
+		    faiLen    = 0;
+		    faiBlen   = 0;
+		    faiLlen   = 0;
+		    faiOffset = bytesWritten;
+		}else if(inRecord && !linetmp.empty()){
+		    if(faiBlen==0){
+			faiBlen = int32_t(linetmp.size());
+			faiLlen = faiBlen+1;
+		    }
+		    faiLen += linetmp.size();
 		}
 	    }
+	    if(inRecord)
+		myFaitmp<<faiName<<"\t"<<faiLen<<"\t"<<faiOffset<<"\t"<<faiBlen<<"\t"<<faiLlen<<"\n";
 	    myFiletmp.close();
+	    myFaitmp.close();
+	    fastagzfd.close();
 
 	    cerr<<"unzipping is done"<<endl;
 
