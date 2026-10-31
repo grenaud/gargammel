@@ -43,14 +43,14 @@ ARTPATCH = patches/art_illumina_gargammel.patch
 art_src_MountRainier/art_illumina_src/art_illumina.o: $(ARTPATCH) #todo: add wget after rm
 	rm -rf art_src_MountRainier/ art_src_MountRainier_Linux/ art_src_MountRainier_MacOS/ artsrcmountrainier20160605linuxtgz.tgz artsrcmountrainier20160605macostgz.tgz
 ifeq ($(OS),Darwin)
-	wget -O artsrcmountrainier20160605macostgz.tgz https://www.dropbox.com/s/6zjipl74de9akg5/artsrcmountrainier2016.06.05macos.tgz?dl=0
+	wget -O artsrcmountrainier20160605macostgz.tgz https://www.dropbox.com/s/6zjipl74de9akg5/artsrcmountrainier2016.06.05macos.tgz?dl=1
 	tar xvfz artsrcmountrainier20160605macostgz.tgz
 	patch -p1 -d art_src_MountRainier_MacOS/ < $(ARTPATCH)
 	touch art_src_MountRainier_MacOS/aclocal.m4 art_src_MountRainier_MacOS/configure art_src_MountRainier_MacOS/config.h.in art_src_MountRainier_MacOS/Makefile.in
 	cd art_src_MountRainier_MacOS/ && ./configure && make && cd ..
 	ln -s art_src_MountRainier_MacOS  art_src_MountRainier
 else
-	wget -O artsrcmountrainier20160605linuxtgz.tgz https://www.dropbox.com/s/wf8441vslu1f1nd/artsrcmountrainier20160605linuxtgz.tgz?dl=0
+	wget -O artsrcmountrainier20160605linuxtgz.tgz https://www.dropbox.com/s/wf8441vslu1f1nd/artsrcmountrainier20160605linuxtgz.tgz?dl=1
 	tar xvfz artsrcmountrainier20160605linuxtgz.tgz
 	patch -p1 -d art_src_MountRainier_Linux/ < $(ARTPATCH)
 	touch art_src_MountRainier_Linux/aclocal.m4 art_src_MountRainier_Linux/configure art_src_MountRainier_Linux/config.h.in art_src_MountRainier_Linux/Makefile.in
