@@ -1460,11 +1460,17 @@ int main (int argc, char *argv[]) {
 				if((coord <= (chrFound[i].endIndexChr-length-distFromEnd+1))){//distance to end is reasonable, no need to circularize
 				    
 				}else{//need to circularize
+				    //endIndexChr is inclusive (startIndexChr=genomeLength+1, endIndexChr=genomeLength+len),
+				    //so from the fetch offset to the end of the chromosome there are
+				    //endIndexChr-(coord-distFromEnd)+1 bases. Without the +1 the last base
+				    //of the chromosome was dropped at the junction.
+				    int l1= (chrFound[i].endIndexChr-(coord-distFromEnd)+1);
+
 				    string temp1=genome->fetchSeq(&faidxForName,
 								  coord-chrFound[i].startIndexChr-distFromEnd,
-								  chrFound[i].endIndexChr-(coord-distFromEnd));
+								  l1);
 
-				    int l2= (length+2*distFromEnd-(chrFound[i].endIndexChr-(coord-distFromEnd)));
+				    int l2= (length+2*distFromEnd-l1);
 				    
 				    string temp2=genome->fetchSeq(&faidxForName,
 				     				  0,

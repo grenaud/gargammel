@@ -413,6 +413,20 @@ test_fragSim() {
     ok "--circ runs" "$RC" "$(lasterr frag-circ)"
     eq "--circ produces 200 fragments" 200 "$(fa_count "$W/frag-circ.out")"
 
+    # Every fragment of a circular chromosome must be a substring of the
+    # chromosome written twice. A small chromosome makes many fragments wrap
+    # past the end; the last base of the chromosome used to be dropped there.
+    CIRCSEQ=ACGTTGCAAGCTTCGATCCGGATATCGCGTAATGCCATGG
+    printf '>testchr\n%s\n' "$CIRCSEQ" > "$W/circ.fa"
+    printf 'testchr\t%s\t9\t%s\t%s\n' "${#CIRCSEQ}" "${#CIRCSEQ}" "$((${#CIRCSEQ}+1))" > "$W/circ.fa.fai"
+    run frag-circwrap "$prog" -n 1000 -l 15 --seed 5 --norev --circ testchr "$W/circ.fa"
+    ok "--circ on a small chromosome runs" "$RC" "$(lasterr frag-circwrap)"
+    CIRCBAD=0
+    while read -r circfrag; do
+	case "$CIRCSEQ$CIRCSEQ" in *"$circfrag"*) ;; *) CIRCBAD=$((CIRCBAD+1)) ;; esac
+    done < <(fa_seqs "$W/frag-circwrap.out")
+    eq "--circ fragments that wrap keep the last base" 0 "$CIRCBAD"
+
     # --- base composition --------------------------------------------
     # --comp takes the dnacomp.txt of mapDamage, not misincorporation.txt
     if [ -f "$DNACOMP" ]; then
