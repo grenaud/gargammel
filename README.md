@@ -680,7 +680,7 @@ Empirical damage and insert size profiles:
 `examples_damage_inserts/` holds ready-made damage profiles and fragment length
 distributions measured from seven published ancient human genomes, so that a
 simulation can be given the damage and the fragment sizes of a real sample
-rather than parameters picked by hand. For each sample there are four files:
+rather than parameters picked by hand. For each sample there are five files:
 
 | file | what it is | used by |
 |---|---|---|
@@ -688,6 +688,7 @@ rather than parameters picked by hand. For each sample there are four files:
 | `[sample].3p.prof` | the same for the 3' end | deamSim `-profile` |
 | `[sample].isize.gz` | the fragment length distribution, as `length[TAB]count` | fragSim `-f` or gargammel.pl `-f`, as is |
 | `[sample].pdf` | a plot of that length distribution | for looking at |
+| `[sample].damage.pdf` | a plot of the damage profiles | for looking at |
 
 The samples span a wide range of damage and fragment lengths, which is the
 point of having several: pick the one closest to the data you want to emulate.
