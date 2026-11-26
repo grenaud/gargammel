@@ -2,13 +2,41 @@
   gargammel: simulations of ancient DNA datasets
 =====================================================================================
 
-[![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat)](http://bioconda.github.io/recipes/gargammel/README.html)
+[![GitHub release](https://img.shields.io/github/v/release/grenaud/gargammel)](https://github.com/grenaud/gargammel/releases/latest)
+[![install with bioconda](https://img.shields.io/conda/vn/bioconda/gargammel.svg?label=bioconda&color=brightgreen)](https://bioconda.github.io/recipes/gargammel/README.html)
+[![Bioconda downloads](https://img.shields.io/conda/dn/bioconda/gargammel.svg?label=bioconda%20downloads)](https://anaconda.org/bioconda/gargammel)
+[![License](https://img.shields.io/github/license/grenaud/gargammel)](LICENSE)
+[![DOI](https://img.shields.io/badge/DOI-10.1093%2Fbioinformatics%2Fbtw670-blue.svg)](https://doi.org/10.1093/bioinformatics/btw670)
 
 
 gargammel is a set of programs aimed at simulating ancient DNA fragments. For ancient hominin samples
 our program can also simulate various levels of present-day human contamination and microbial contamination.
 
 The website for gargammel can be found here: https://grenaud.github.io/gargammel/
+
+
+## How to cite
+
+If you use gargammel in your work, please cite:
+
+> Renaud G, Hanghøj K, Willerslev E, Orlando L. gargammel: a sequence simulator for ancient DNA. *Bioinformatics* 2017;33(4):577–579. [doi:10.1093/bioinformatics/btw670](https://doi.org/10.1093/bioinformatics/btw670)
+
+BibTeX:
+
+```bibtex
+@article{Renaud2017gargammel,
+  author    = {Renaud, Gabriel and Hangh{\o}j, Kristian and Willerslev, Eske and Orlando, Ludovic},
+  title     = {{{gargammel}: a sequence simulator for ancient {DNA}}},
+  journal   = {Bioinformatics},
+  year      = {2017},
+  volume    = {33},
+  number    = {4},
+  pages     = {577--579},
+  publisher = {Oxford University Press},
+  doi       = {10.1093/bioinformatics/btw670},
+  url       = {https://doi.org/10.1093/bioinformatics/btw670}
+}
+```
 
 
 Questions/bug report/feature requests :
