@@ -1,6 +1,46 @@
 gargammel release notes
 =====================================================================================
 
+1.2.1
+-------------------------------------------------------------------------------------
+
+A bug-fix release for fragSim, plus empirical damage and fragment length profiles.
+The damage model, deamSim, art_illumina and the gargammel.pl wrapper are unchanged.
+
+### fragSim: gzipped FASTA input works again
+Given a `.gz` reference, fragSim 1.2.0 aborted with `*** buffer overflow detected ***` while creating its temporary uncompressed copy. Fixed:
+
+* the temporary file name buffer is now sized for its terminator;
+* fragSim exits with an error if the `.gz` file cannot be opened;
+* the `.fai` index for the temporary copy is built while decompressing, so a `<file>.gz.fai` is no longer needed.
+
+Fragments drawn from a gzipped reference are identical to those drawn from the same reference uncompressed, for the same seed.
+
+### fragSim --circ: the last base of the chromosome is no longer dropped
+When a fragment wrapped past the end of a circular chromosome, the last base before the junction was missing, so the fragment did not match the chromosome. On a 40 bp test chromosome with 15 bp fragments, 1.2.0 produced 332 such fragments out of 1000; 1.2.1 produces none. Fragments that do not wrap are unaffected. A test for this was added.
+
+### fragSim -f: frequencies or counts
+The second column of the `-f` file may now hold integer counts as well as frequencies. The values are normalized, so they no longer have to sum to 1. Columns may be separated by any whitespace, blank lines are skipped, and lengths below 1 and negative values are rejected with an error.
+
+### adptSim: builds against current libgab
+The Makefile clones the current libgab, and libgab 1.1.0 removed the `srandCalled` global that adptSim 1.2.0 set. A fresh 1.2.0 clone therefore no longer compiles (`'srandCalled' was not declared in this scope`). adptSim now uses the libgab 1.1.0 interface. With `--seed`, output is identical to 1.2.0, including the random padding for fragments shorter than the read length.
+
+### Empirical damage and fragment-length profiles
+`examples_damage_inserts/` holds files for seven published ancient human genomes (ATP2, I1072, Ust_Ishim, cth842, irk034, prs012, sf12):
+
+* 5' and 3' damage profiles over 20 bases (`<sample>.5p.prof`, `<sample>.3p.prof`), for `deamSim -profile`;
+* fragment length distributions (`<sample>.isize.gz`, as `length count`, which `-f` takes as is);
+* PDF plots of both.
+
+The README describes the samples and how the files were made. `ancient_DNA_examples_README.md` gives the references.
+
+### Build
+* The Makefile downloads the ART tarball with `?dl=1`. Dropbox now serves an HTML preview page for `?dl=0`, which made `tar` fail on a fresh clone with "not in gzip format".
+
+### Tests
+`make test` now runs 310 checks.
+
+
 1.1.5
 -------------------------------------------------------------------------------------
 

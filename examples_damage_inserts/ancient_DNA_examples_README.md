@@ -1,6 +1,6 @@
 # Ancient DNA damage and insert-size examples
 
-Empirical ancient human DNA profiles from seven published studies. Each sample has a damage-profile PDF (`<sample>.pdf`); `listbams` records the source BAM files.
+Empirical ancient human DNA profiles from seven published studies. Each sample has a damage-profile plot (`<sample>.damage.pdf`) and a fragment length plot (`<sample>.pdf`).
 
 | Sample | Archaeological context | Study (journal, volume, issue, pages/article) | BibTeX key |
 |---|---|---|---|
@@ -22,7 +22,7 @@ Empirical ancient human DNA profiles from seven published studies. Each sample h
   doi = {10.1038/nature13810}
 }
 @article{Gunther2015,
-  author = {G{"u}nther, Torsten and others},
+  author = {G{\"u}nther, Torsten and others},
   title = {Ancient genomes link early farmers from Atapuerca in Spain to modern-day Basques},
   journal = {Proceedings of the National Academy of Sciences},
   year = {2015}, volume = {112}, number = {38}, pages = {11917--11922},
@@ -35,7 +35,7 @@ Empirical ancient human DNA profiles from seven published studies. Each sample h
   doi = {10.1038/nature19310}
 }
 @article{Gunther2018,
-  author = {G{"u}nther, Torsten and others},
+  author = {G{\"u}nther, Torsten and others},
   title = {Population genomics of Mesolithic Scandinavia: Investigating early postglacial migration routes and high-latitude adaptation},
   journal = {PLOS Biology}, year = {2018}, volume = {16}, number = {1}, eid = {e2003703},
   doi = {10.1371/journal.pbio.2003703}
@@ -48,7 +48,7 @@ Empirical ancient human DNA profiles from seven published studies. Each sample h
   doi = {10.1073/pnas.1818037116}
 }
 @article{Kilinc2021,
-  author = {K{\i}l{\i}n{\c c}, G{"u}l{\c s}ah Merve and others},
+  author = {K{\i}l{\i}n{\c c}, G{\"u}l{\c s}ah Merve and others},
   title = {Human population dynamics and {Yersinia pestis} in ancient northeast Asia},
   journal = {Science Advances}, year = {2021}, volume = {7}, number = {2}, eid = {eabc4587},
   doi = {10.1126/sciadv.abc4587}

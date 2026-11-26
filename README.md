@@ -686,7 +686,7 @@ rather than parameters picked by hand. For each sample there are four files:
 |---|---|---|
 | `[sample].5p.prof` | substitution rates over the first 20 bases of the 5' end | deamSim `-profile` |
 | `[sample].3p.prof` | the same for the 3' end | deamSim `-profile` |
-| `[sample].isize.gz` | the fragment length distribution, as `count length` | fragSim `-f`, after conversion |
+| `[sample].isize.gz` | the fragment length distribution, as `length[TAB]count` | fragSim `-f` or gargammel.pl `-f`, as is |
 | `[sample].pdf` | a plot of that length distribution | for looking at |
 
 The samples span a wide range of damage and fragment lengths, which is the
@@ -699,10 +699,10 @@ the two numbers that most immediately characterize a double-stranded library:
 | `cth842` | 0.409 | 0.412 | 52 | Çatalhöyük, Anatolia — Yaka et al. 2021 |
 | `ATP2` | 0.313 | 0.314 | 56 | El Portalón, Atapuerca — Günther et al. 2015 |
 | `I1072` | 0.228 | 0.219 | 41 | ancient Near East — Lazaridis et al. 2016 |
-| `prs012` | 0.096 | 0.197 | 91 | Primrose Grange, Ireland — Sánchez-Quinto et al. 2019 |
-| `sf12` | 0.022 | 0.292 | 65 | Stora Förvar, Gotland — Günther et al. 2018 |
-| `irk034` | 0.027 | 0.026 | 92 | Lake Baikal, northeast Asia — Kılınç et al. 2021 |
-| `Ust_Ishim` | 0.022 | 0.039 * | 54 | Ust'-Ishim, western Siberia — Fu et al. 2014 |
+| `prs012` | 0.096 | 0.197 | 89 | Primrose Grange, Ireland — Sánchez-Quinto et al. 2019 |
+| `sf12` | 0.022 | 0.292 | 63 | Stora Förvar, Gotland — Günther et al. 2018 |
+| `irk034` | 0.027 | 0.026 | 90 | Lake Baikal, northeast Asia — Kılınç et al. 2021 |
+| `Ust_Ishim` | 0.022 | 0.039 * | 53 | Ust'-Ishim, western Siberia — Fu et al. 2014 |
 
 \* Ust'-Ishim came from a **single-stranded** library, and its profile shows it:
 C->T at *both* ends and no G->A at all, where the six double-stranded libraries
@@ -723,7 +723,7 @@ damage as `-matfile` (a substitution matrix, `5.dat`/`3.dat`), `-mapdamage` or
 profiles, drive the programs yourself, which is what the one-liner near the top
 of this README is for:
 
-    src/fragSim -n 1000000 -f ATP2.freq.gz --seed 1 ref.fa \
+    src/fragSim -n 1000000 -f examples_damage_inserts/ATP2.isize.gz --seed 1 ref.fa \
      | src/deamSim -profile examples_damage_inserts/ATP2. --seed 2 /dev/stdin \
      | src/adptSim -l 75 -artp /dev/stdout --seed 3 /dev/stdin \
      | art_src_MountRainier/art_illumina -ss HS25 -amp -na -p -l 75 -c 1 -rs 4 \
@@ -733,32 +733,18 @@ That gives one source with the damage and the fragment lengths of the chosen
 sample. For a run that mixes endogenous, contaminant and microbial sources you
 need gargammel.pl, and therefore a matrix rather than a profile.
 
-The length distributions need one conversion first. `insize | sort -n | uniq -c`
-writes `count length`, whereas fragSim `-f` wants `length[TAB]frequency` with
-the frequencies summing to 1, so the columns have to be swapped and normalized:
+The length distributions need no conversion: `-f` takes `length[TAB]count` as
+well as `length[TAB]frequency` (since version 1.2.1) and normalizes the second
+column itself.
 
-    gzip -cd examples_damage_inserts/ATP2.isize.gz \
-     | awk '{ c[$2]=$1; t+=$1 } END{ for(l in c) printf "%d\t%.10f\n", l, c[l]/t }' \
-     | sort -n | gzip > ATP2.freq.gz
+    ./gargammel.pl -n 1000000 --comp 0,0,1 \
+        -f examples_damage_inserts/ATP2.isize.gz -o data/simulation data/
 
-    ./gargammel.pl -n 1000000 --comp 0,0,1 -f ATP2.freq.gz -o data/simulation data/
+The files work with `gargammel.pl -f` as well as `fragSim -f`; it is only the
+damage profiles that gargammel.pl cannot take.
 
-The converted file works with `gargammel.pl -f` as well as `fragSim -f`, since
-the wrapper passes it straight through; it is only the damage profiles that
-gargammel.pl cannot take.
+### Something to check before using these
 
-Passing an unconverted `.isize.gz` to `-f` is caught rather than silently
-misread: fragSim requires two tab-separated fields per line and frequencies
-that sum to 1, and stops with an error otherwise.
-
-### Two things to check before using these
-
-* **`irk034` and `prs012` have a spike at exactly 151bp**, which is 3.34% and
-  2.44% of their reads and by far the tallest point in each distribution. That
-  is the read length of the run: for pairs that were never merged, the observed
-  insert length saturates there. Simulating from these unmodified gives that
-  same 2-3% of fragments at exactly 151bp, which is an artifact of the
-  measurement and not biology. Drop the last bin if that matters to you.
 * **`prs012` and `sf12` are strongly asymmetric between their two ends**
   (0.096 against 0.197, and 0.022 against 0.292), rather than showing the
   near-equal 5' C->T and 3' G->A of the other double-stranded libraries. Look
@@ -775,11 +761,10 @@ The damage profiles come from
 and the length distributions from
 [insertsize](https://github.com/grenaud/insertsize):
 
-    insize [sample].bam | sort -n | uniq -c | gzip > ATP2.isize.gz
+    insize [sample].bam | sort -n | uniq -c \
+     | awk '{ print $2 "\t" $1 }' | gzip > ATP2.isize.gz
 
-`listbams` records which BAM each one came from, and `listcmds_bp2` and
-`listcmds_i` the exact commands. To add a sample of your own, run those two
-programs over your BAM.
+To add a sample of your own, run those two programs over your BAM.
 
 ### Sources of the samples
 

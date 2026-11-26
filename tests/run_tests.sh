@@ -20,6 +20,9 @@
 # Returns 0 if every test passed, 1 otherwise.
 #
 
+# some checks compare the output of sort, so use one collation everywhere
+export LC_ALL=C
+
 TESTDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 GARGDIR="$( dirname "$TESTDIR" )"
 SRCDIR="$GARGDIR/src"
